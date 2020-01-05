@@ -1,0 +1,1320 @@
+负责（）主题逻辑，用户体验，后台管理开发及优化
+完成 CVTE 接口接入，支持多类型，并完成后期（）接入
+管理员后台权限系统，对后台访问进行配置式 url 拦截，允许前端使用权限标签自动处理按钮或页面片段是否显示，完成后台权限层级树展示，管理员后台看到的菜单为分配的角色权限层级树的并集
+
+优化系统中 httpClient 同步和异步请求优化，可以通过开关控制请求使用的方式
+优化 redis 的使用，封装相关的接口及监控，方便他人使用和监控
+添加对 consumer 请求的 qps 监控，及流量控制（模拟 ratelimiter，使用令牌桶替代令牌窗口）
+通过 Mybatis 插件监控系统中的 sql，根据记录中的 sql 异常优化 sql
+
+负责人沟通
+git 学习使用 开发工具 调试技巧
+
+之前的后台权限管理：
+1. 只有固定的管理员与普通用户两种角色，每个用户只能配置一个角色
+2. 用户与可操作权限直接关联，每个角色能做的事情直接在代码中写死，无法动态配置
+
+后台权限管理改造：
+1. 基于 RBAC （Role-Bases Access Control）模型进行改造
+role(name, type, status)：商务，运维，产品
+user(username, dept_id, status)
+role_user(role_id, user_id)：关联用户与角色
+
+2. 为了对用户管理，在用户上层引入部门
+dept(name, parent_id, level, seq)
+
+3. 为了对权限管理，在权限上层映入权限模块
+acl(code, name, module_id, url, type, status, seq)
+acl_module(name, parent_id, level, status)
+role_acl(role_id, acl_id)：关联角色与权限
+
+4. 通过角色进行分配权限和用户
+5. 通过拦截器，对当前用户和访问的 url 进行判断。同时权限拦截器中增加对参数的检查
+先判断接口是否有权访问，再根据配置的条件判断是否有权使用指定的参数值
+
+6. 添加缓存
+7. 操作日志记录，并根据日志记录进行恢复
+log(type, target_id, old_value, new_value, status)
+
+user：登录登出
+支持用户名邮箱电话号码登录
+
+BeanValidator
+
+添加用户、编辑用户等操作、获取某部门下所有用户、获取用户所有角色、获取用户所有权限点（超级用户拥有所有权限，普通用户根据其拥有的所有角色获取所拥有的所有权限并在权限树中显示）
+
+添加部门（维护部门层级）、编辑部门等操作（由于维护了部门层级，编辑部门需要更新子部门的部门层级）、删除部门（空部门：没有子部门，没有用户）、部门树结构
+
+添加权限点、更新权限点、获取某权限模块下的所有权限、获取某权限点下授权角色与授权用户
+
+添加权限模块（维护权限模块层级）、编辑权限模块等操作（由于维护了权限模块层级，编辑权限模块需要更新子权限模块的层级）、删除权限模块（空模块：没有子模块，没有权限点）、权限模块树结构
+
+添加角色、编辑角色等操作、查看所有角色、获取某一角色的权限并形成权限树、更改角色权限、获取某一角色下的所有用户以及不属于此角色下的用户、更新角色下的用户
+
+根据日志恢复操作
+
+```
+request.getRequestDispatcher(path).forward(request, response);
+response.sendRedirect(ret);
+```
+
+tomcat配置access日志，记录每次http请求相关信息
+在系统里调用外部的地方，记录请求的接口、参数、返回结果、花费时间、遇到的异常等
+
+频繁GC问题或内存溢出问题
+一、使用jps查看线程ID
+二、使用jstat -gc 3331 250 20 查看gc情况，一般比较关注PERM区的情况，查看GC的增长情况。
+三、使用jstat -gccause：额外输出上次GC原因
+四、使用jmap -dump:format=b,file=heapDump 3331生成堆转储文件
+五、使用jhat或者可视化工具（Eclipse Memory Analyzer 、IBM HeapAnalyzer）分析堆情况。
+六、结合代码解决内存溢出或泄露问题
+
+获取 Java 程序使用的内存
+通过 java.lang.Runtime 类中与内存相关方法来获取剩余的内存，总内存及最大堆内存。通过这些方法你也可以获取到堆使用的百分比及堆内存的剩余空间
+
+Java 中的编译期常量是什么
+static final 变量就是编译期常量。这些变量在编译时会被替换掉，因为编译器知道这些变量的值在运行时不能改变
+
+jmap -heap pid 查看堆使用情况
+jmap -histo pid：查看堆中对象数量和大小
+
+性能调优
+1. 内存占用
+2. 延时
+3. 吞吐量
+
+优雅关机
+JVM退出：JVM收到退出信号后，会调用注册的钩子，我们通过的注册的JVM退出钩子进行优雅关机
+阻止Daemon的线程在JVM退出被杀掉而导致消息丢失：如果Worker线程是Daemon线程，我们需要在JVM退出钩子中等待Worker线程完成当前手头处理的消息，再退出JVM。如果不是Daemon线程，即使JVM收到退出信号，也得等待Worker线程退出后再退出，不会丢掉正在处理的消息
+唤醒阻塞 Worker 线程并退出：中断线程以退出，在异常处理的默认处理器中被捕捉，并写入错误日志
+
+停止线程
+1. 取消任务标志位
+缺点：无法应用于拥塞方法，假设在循环中调用了拥塞方法，任务可能因拥塞而永远不会去检查取消标志位，甚至会造成永远不能停止
+2. 中断
+```
+public class Thread {
+    // 中断当前线程
+    public void interrupt();
+    // 判断当前线程是否被中断
+    public boolen isInterrupt();
+    // 清除当前线程的中断状态，并返回之前的值
+    public static boolen interrupt();   
+}
+```
+代码中有两次检查中断请求：
+第一次是在循环开始前，显示检查中断请求
+第二次是在put方法，该方法为拥塞的，会隐式坚持当前线程是否被中断
+```
+public void run() {
+    try {
+        BigInteger p = BigInteger.ONE;
+        //使用中断的方式来取消任务
+        while (!Thread.currentThread().isInterrupted())
+            //put方法会隐式检查并响应中断
+            queue.put(p = p.nextProbablePrime());
+    } catch (InterruptedException consumed) {
+        /* 允许任务退出 */
+    }
+}
+```
+3. 通过Future取消任务
+4. 不可中断的拥塞：让其抛出类似的异常，来停止任务
+```
+public class ReaderThread extends Thread {
+    private static final int BUFSZ = 512;
+    private final Socket socket;
+    private final InputStream in;
+
+    public ReaderThread(Socket socket) throws IOException {
+        this.socket = socket;
+        this.in = socket.getInputStream();
+    }
+
+    public void interrupt() {
+        try {
+            // 关闭套接字
+            // 此时in.read会抛出异常
+            socket.close();
+        } catch (IOException ignored) {
+        } finally {
+            // 正常的中断
+            super.interrupt();
+        }
+    }
+
+    public void run() {
+        try {
+            byte[] buf = new byte[BUFSZ];
+            while (true) {
+                int count = in.read(buf);
+                if (count < 0)
+                    break;
+                else if (count > 0)
+                    processBuffer(buf, count);
+            }
+        } catch (IOException e) { 
+            // 如果socket关闭，in.read方法将会抛出异常
+            // 借此机会，响应中断，线程退出
+        }
+    }
+
+    public void processBuffer(byte[] buf, int count) {
+    }
+}
+```
+
+处理非正常线程终止：
+```
+public interface UncaughtExceptionHandler {
+    void uncaughtException(Thread t, Throwable e);
+}
+```
+如果JVM发现一个线程因未捕获异常而退出，就会把该异常交个Thread对象设置的UncaughtExceptionHandler来处理
+
+可以为所有的Thread设置一个默认的UncaughtExceptionHandler，通过调用Thread.setDefaultUncaughtExceptionHandler(Thread.UncaughtExceptionHandler eh)方法，这是Thread的一个static方法
+
+关闭钩子
+```java
+Runtime.getRuntime().addShutdownHook(new Thread() {
+  public void run() {
+
+  }
+});
+```
+
+JVM 停止时将所有的守护线程抛弃，不执行 `finally` 代码块，直接退出，应尽可能少地使用守护进程，守护线程最好用于执行内部任务
+
+终结器访问的任何状态都可能被多个线程访问，这样就必须对其访问操作进行同步
+终结器通常在对象上产生巨大的性能开销
+大多数情况下，使用 `finally` 代码块和显示 `close` 方法能够比终结器更好地管理资源
+
+在线程池的线程中不应该使用 `ThreadLocal` 在任务之间传递值
+只有在任务都是同类型且相互独立时，线程池的性能才能达到最佳
+
+
+线程池的关闭
+调用线程的interrupt方法，它有两个作用：
+1、如果此线程处于阻塞状态(比如调wait方法，io等待)，则会立刻退出阻塞，并抛出InterruptedException异常，线程就可以通过捕获InterruptedException来做处理，然后让线程退出。
+2、如果此线程正处于运行之中，则线程不受任何影响，继续运行，仅仅是线程的中断标记被设置为true。所以线程要在适当的位置通过调用isInterrupted方法来查看自⼰是否被中断，并做退出操作
+
+如果线程的interrupt方法先被调用，然后线程调用阻塞方法进入阻塞状态，InterruptedException异常依旧会抛出。如果线程捕获InterruptedException异常后，继续调用阻塞方法， 将不再触发InterruptedException异常
+
+shutdownNow：线程池拒接收新提交的任务，同时立刻关闭线程池，线程池的任务不再执行
+shutdown：线程池拒接收新提交的任务，同时等待线程池的任务执行完毕后关闭线程池
+
+调用完shutdownNow和shuwdown方法后，并不代表线程池已经完成关闭操作，它只是异步的通知线程池进行关闭处理。如果要同步等待线程池彻底关闭后才继续往下执行，需要调用awaitTermination方法进行同步等待
+shutdownNow 源码分析
+1. 原子性的修改线程池的状态为STOP状态
+2. 遍历线程池的所有工作线程，然后调用线程的interrupt方法
+3. 将队列中还没有执行的任务放到列表里面，返回给调用方
+
+shutdown 源码分析
+1. 将线程池的状态修改为SHUTDOWN状态
+2. 调用 interruptIdleWorkers方法，来中断空闲的线程
+当我们调用线程池的shuwdown方法时，如果线程正在执行线程池的任务，即便任务处于阻塞状态，线程也不会被中断，而是继续执行。如果线程池阻塞等待从队列中读取任务，则会被唤醒，但是会继续判断队列是否为空，若不为空，则会继续从队列中读取任务，若为空则线程退出
+
+使用shutdownNow方法，可能会引起报错，使用shutdown方法可能会导致线程关闭不了
+所以当我们使用shutdownNow方法关闭线程池时，一定要对任务进行异常捕获
+当我们使用shuwdown方法关闭线程池时，一定要确保任务里不会有永久阻塞等待的逻辑，否则线程池就关闭不了
+最后，确定要记得shutdownNow和shuwdown调用完，线程池并非是立刻就关闭的，要想等待线程池关闭，还需调用awaitTermination方法来阻塞等待
+
+如果要实现 immutable 的类，我们需要做到：
+将 class 自身声明为 final，这样别人就不能扩展来绕过限制了
+将所有成员变量定义为 private 和 final，并且不要实现 setter 方法
+通常构造对象时，成员变量使用深度拷贝来初始化，而不是直接赋值，这是一种防御措施，因为你无法确定输入对象不被其他人修改
+如果确实需要实现 getter 方法，或者其他可能会返回内部状态的方法，使用 copy-on-write 原则，创建私有的 copy
+
+类型擦除就是说Java泛型只能用于在编译期间的静态类型检查，然后编译器生成的代码会擦除相应的类型信息，这样到了运行期间实际上JVM根本就不知道泛型所代表的具体类型
+
+避免死锁 
+1. 避免使用多个锁
+2. 设计好锁的获取顺序
+3. 使用带超时的方法
+
+死锁发生原因
+1. 互斥条件
+2. 互斥条件长期持有
+3. 循环依赖关系
+
+ThreadLocalMap 建议自己 remove, 且不要与线程池配合，因为 worker 线程往往不会退出
+
+使用双重锁检测机制，确保并发情况下instance对象不会被重复初始化
+使用volatile修饰符，防止指令重排引发的初始化问题
+```
+public class Singleton {
+    private Singleton() {}  //私有构造函数
+    private volatile static Singleton instance = null;  //单例对象
+    //静态工厂方法
+    public static Singleton getInstance() {
+          if (instance == null) {      //双重检测机制
+         synchronized (Singleton.class){  //同步锁
+           if (instance == null) {     //双重检测机制
+             instance = new Singleton();
+                }
+             }
+          }
+          return instance;
+      }
+}
+```
+用静态内部类实现单例模式：INSTANCE对象初始化的时机并不是在单例类Singleton被加载的时候，而是在调用getInstance方法，使得静态内部类LazyHolder被加载的时候。因此这种实现方式是利用classloader的加载机制来实现懒加载，并保证构建单例的线程安全
+```
+public class Singleton {
+    private static class LazyHolder {
+        private static final Singleton INSTANCE = new Singleton();
+    }
+    private Singleton (){}
+    public static Singleton getInstance() {
+        return LazyHolder.INSTANCE;
+    }
+}
+```
+
+用枚举实现单例模式：
+```
+public enum SingletonEnum {
+    INSTANCE;
+}
+```
+使用枚举实现的单例模式，不但可以防止利用反射强行构建单例对象，而且可以在枚举类对象被反序列化的时候，保证反序列的返回结果是同一对象。
+对于其他方式实现的单例模式，如果既想要做到可序列化，又想要反序列化为同一对象，则必须实现readResolve方法。
+
+而Callable+Future/FutureTask可以获取多线程运行的结果，可以在等待时间太长没获取到需要的数据的情况下取消该线程的任务，非常有用
+
+8、Java中如何获取到线程dump文件
+（1）获取到线程的pid，可以通过使用jps命令，在Linux环境下还可以使用ps -ef | grep java
+（2）打印线程堆栈，可以通过使用jstack pid命令，在Linux环境下还可以使用kill -3 pid
+
+12、生产者消费者模型的作用是什么
+（1）通过平衡生产者的生产能力和消费者的消费能力来提升整个系统的运行效率，这是生产者消费者模型最重要的作用
+（2）解耦，这是生产者消费者模型附带的作用，解耦意味着生产者和消费者之间的联系少，联系越少越可以独自发展而不需要收到相互的制约
+
+17、怎么检测一个线程是否持有对象监视器
+Thread类提供了一个holdsLock(Object obj)方法，当且仅当对象obj的监视器被某条线程持有的时候才会返回true，注意这是一个static方法，这意味着"某条线程"指的是当前线程
+
+22、Linux环境下如何查找哪个线程使用CPU最长
+（1）获取项目的pid，jps或者ps -ef | grep java
+（2）top -H -p pid，顺序不能改变
+
+24、怎么唤醒一个阻塞的线程
+如果线程是因为调用了wait()、sleep()或者join()方法而导致的阻塞，可以中断线程，并且通过抛出InterruptedException来唤醒它；如果线程遇到了IO阻塞，无能为力，因为IO是操作系统实现的，Java代码并没有办法直接接触到操作系统
+
+NIO 组成部分
+Buffer, Channel, Selector, Charset
+
+对于ThreadLocal使用前或者使用后一定要先remove
+
+发布对象：是一个对象能够被当前范围之外的代码所使用
+对象逸出：一种错误的发布，当一个对象还没有构造完成时，就被其他线程所见
+
+方法逃逸
+```java
+public static StringBuffer craeteStringBuffer(String s1, String s2) {
+    StringBuffer sb = new StringBuffer();
+    sb.append(s1);
+    sb.append(s2);
+    return sb;
+}
+```
+```java
+public static String createStringBuffer(String s1, String s2) {
+    StringBuffer sb = new StringBuffer();
+    sb.append(s1);
+    sb.append(s2);
+    return sb.toString();
+}
+```
+
+安全发布对象
+1. 静态初始化函数中初始化一个对象引用
+2. 将对象的引用保存到 volatile 类型域或者 AtomicReference 对象中
+3. 将对象的引用保存到某个正确构造对象的 final 类型域中
+4. 将对象的引用保存到一个由锁保护的域中
+
+double check 线程不安全，因为在生成实例的三个步骤可能会发生指令重排
+分配内存、初始化对象、将分配的内存地址保存到变量（可能会发生指令重排）
+
+不可变对象
+1. 对象创建之后其状态不能修改
+2. 对象所有域都为 `final` 类型
+3. 对象时正确创建的（在创建期间，`this` 引用没有逸出）
+
+`final` 类：不能被继承
+`final` 方法：锁定方法
+`final` 变量：基本类型与引用对象 ?
+
+jdk
+```java
+private Map<Integer, Integer> map = Maps.newHashMap();
+map = Collections.unmodifiableMap(map);
+map.put(1, 2);
+```
+guava
+```java
+private final ImmutableList list = ImmutableList.of(1, 2, 3);
+private final ImmutableSet set = ImmutableSet.copyOf(list);
+private final ImmutableMap<Integer, Integer> map = ImmutableMap.of(1, 2, 3, 4);
+list.add(4);
+```
+
+线程封闭
+1. 堆栈封闭：局部变量，无并发问题
+2. ThreadLocal 线程封闭
+```java
+private static final ThreadLocal<Long> holder = new ThreadLocal<>();
+holder.add(1);
+holder.get();
+holder.remove();
+```
+
+Fork/Join
+```java
+public class ForkJoinTask extends RecursiveTask<Integer> {
+
+    public static final int threshold = 2;
+    private int start;
+    private int end;
+
+    public ForkJoinTask(int start, int end) {
+        this.start = start;
+        this.end = end;
+    }
+
+    @Override
+    protected Integer compute() {
+        int sum = 0;
+
+        //如果任务足够小就计算任务
+        boolean canCompute = (end - start) <= threshold;
+        if (canCompute) {
+            for (int i = start; i <= end; i++) {
+                sum += i;
+            }
+        } else {
+            // 如果任务大于阈值，就分裂成两个子任务计算
+            int middle = (start + end) / 2;
+            ForkJoinTask leftTask = new ForkJoinTask(start, middle);
+            ForkJoinTask rightTask = new ForkJoinTask(middle + 1, end);
+
+            // 执行子任务
+            leftTask.fork();
+            rightTask.fork();
+
+            // 等待任务执行结束合并其结果
+            int leftResult = leftTask.join();
+            int rightResult = rightTask.join();
+
+            // 合并子任务
+            sum = leftResult + rightResult;
+        }
+        return sum;
+    }
+
+    public static void main(String[] args) {
+        ForkJoinPool forkjoinPool = new ForkJoinPool();
+
+        //生成一个计算任务，计算1+2+3+4
+        ForkJoinTask task = new ForkJoinTask(1, 100);
+
+        //执行一个任务
+        Future<Integer> result = forkjoinPool.submit(task);
+
+        try {
+            log.info("result:{}", result.get());
+        } catch (Exception e) {
+            log.error("exception", e);
+        }
+    }
+}
+```
+
+CPU 密集型：压榨 CPU，NCPU + 1
+IO 密集型：2 * NCPU
+
+死锁
+1. 互斥条件
+2. 请求和保持条件
+3. 不剥夺条件
+4. 环路等待条件
+
+避免死锁
+1. 加锁顺序
+2. 加锁时限
+3. 死锁检测
+
+
+不可变对象可以自由共享与发布
+
+NumberRange 类不足以保护它的不变性条件
+```java
+public class NumberRange {
+  private final AtomicInteger lower = new AtomicInteger(0);
+  private final AtomicInteger upper = new AtomicInteger(0);
+
+  public void setLower(int i) {
+    if (i > upper.get()) {
+      throw new IllegalArgumentException("lower > upper");
+    }
+    lower.set(i);
+  }
+
+  public void setUpper(int i) {
+    if (i < lower.get()) {
+      throw new IllegalArgumentException("lower > upper");
+    }
+    upper.set(i);
+  }
+
+  public boolean isInRange(int i) {
+    return (i >= lower.get() && i <= upper.get());
+  }
+}
+```
+使用不同锁导致线程不安全
+```java
+public class ListHelper<E> {
+  public List<E> list = Collections.synchronizedList(new ArrayList<E>());
+
+  public synchronized boolean putIfAbsent(E x) {
+    boolean absent = !list.contains(x);
+    if (absent) {
+      list.add(x);
+    }
+    return absent;
+  }
+}
+```
+使用相同锁保证线程安全
+```java
+public class ListHelper<E> {
+  public List<E> list = Collections.synchronizedList(new ArrayList<E>());
+
+  public boolean putIfAbsent(E x) {
+    synchronized (list) {
+      boolean absent = !list.contains(x);
+      if (absent) {
+        list.add(x);
+      }
+      return absent;
+    }
+  }
+}
+```
+组合方式，即使底层的 `List` 不是线程安全的或者加锁实现修改，`ImprovedList` 也提供了一致的加锁机制实现线程安全性
+```java
+public class ImprovedList<T> implements List<T> {
+  private final List<T> list;
+
+  public ImprovedList(List<T> list) {
+    this.list = list;
+  }
+
+  public synchronized boolean putIfAbsent(T x) {
+    boolean contains = list.contains(x);
+    if (contains) {
+      list.add(x);
+    }
+    return !contains;
+  }
+}
+```
+通过调用者加锁保证 Vector 复合操作线程安全
+```java
+public static Object getLast(Vector list) {
+  synchronized (list) {
+    int lastIndex = list.size() - 1;
+    return list.get(lastIndex);
+  }
+}
+
+public static void deleteLast(Vector list) {
+  synchronized (list) {
+    int lastIndex = list.size() - 1;
+    list.remove(lastIndex);
+  }
+}
+```
+可能会抛出异常，当 Vector 仍然是线程安全的，因为 Vector 状态有效
+```java
+for (int i = 0; i < vector.size(); ++i) {
+  Object obj = vector.get(i);
+}
+```
+加锁解决不可靠迭代问题，降低了并发性
+```java
+synchronized(vector) {
+  for (int i = 0; i < vector.size(); ++i) {
+    Object obj = vector.get(i);
+  }
+}
+```
+隐藏迭代器：调用容器的 `toString` 方法对容器进行遍历
+```java
+System.out.println("list: " + list)
+```
+`ConcurrentHashMap` 不能被加锁来执行独占访问，因此不能通过加锁创建新的原子操作
+
+
+
+死锁
+1. 锁顺序死锁
+2. 动态锁顺序死锁
+3. 协作对象之间发生死锁：在持有锁的情况下调用某个外部方法，需要警惕死锁
+4. 资源死锁
+
+死锁避免
+1. 定时锁
+2. kill -3 获取线程转储信息
+
+性能
+服务时间
+延迟时间
+吞吐率
+效率
+可伸缩性
+容量
+
+线程引入开销
+上下文切换
+内存同步
+阻塞
+
+减少锁竞争
+1. 缩小锁范围
+2. 减小锁粒度
+3. 锁分段
+4. 缓存热点数据
+5. 读写锁、原子变量代替独占锁
+
+性能测试
+1. 吞吐量
+2. 响应性
+3. 可伸缩性
+
+
+
+ReentranLock, Semaphore, ReentrantReadWriteLock, CountDownLatch, SynchronousQueue 和 FutureTask 都是基于 AQS 构建
+
+```java
+public class NumberRange {
+  private static class IntPair {
+    final int lower;
+    final int upper;
+  }
+
+  private final AtomicReference<IntPair> values = new AtomicReference<IntPair>(new IntPair(0, 0));
+
+  public int getLower() {
+    return values.get().lower;
+  }
+
+  public int getUpper() {
+    return values.get().upper;
+  }
+
+  public void setLower() {
+    while (true) {
+      IntPair oldv = values.get();
+      if (i > oldv.upper) {
+        throw new IllegalArgumentException("...");
+      }
+      IntPair newv = new IntPair(i, oldv.upper);
+      if (values.compareAndSet(oldv, newv))
+        return ;
+    }
+  }
+}
+```
+
+线程不安全类
+StringBuilder：不安全
+StringBuffer：安全
+SimpleDateFormat：不安全
+JodaTime：安全
+ArrayList、HashSet、HashMap：不安全
+Vector、HashTable（key、value 不能为 null）、Collections.synchronizedXXX（List、Set、Map）：同步容器
+
+ALT + F7 查找调用
+F3 下一个
+
+线程优势
+1. 发挥多处理器强大能力
+2. 建模简单
+3. 异步时间简单处理
+4. 响应更灵敏的用户界面
+
+线程风险
+1. 安全性
+2. 活跃性
+3. 性能问题
+
+可变状态逸出
+```java
+class UnsafeStates {
+  private String[] states = new String[]{ "AK", "AL" };
+
+  public String[] getStates() { return states; }
+}
+```
+this 引用逸出
+```java
+class ThisEscape {
+  public ThisEscape(EventSource source) {
+    source.reigsterListener(
+      new EventListener() {
+        public void onEvent(Event e) {
+          doSomethine(e);
+        }
+      });
+  }
+}
+```
+```java
+class SafeListener {
+  private final EventListener listener;
+
+  private SafeListener() {
+    listener = new EventListener() {
+      public void onEvent(Event e) {
+        doSomething(e);
+      }
+    };
+  }
+
+  public static SafeListener newInstance(EventSource source) {
+    SafeListener safe = new SafeListener();
+    source.registerListener(safe.listener);
+    return safe;
+  }
+}
+```
+
+构造函数中启动线程造成 this 引用逸出
+
+线程封闭
+1. 栈封闭
+2. ThreadLocal
+
+不可变对象条件
+1. 对象创建后状态不能修改
+2. 对象所有域为 `final` 类型
+3. 对象是正确创建的
+
+安全发布一个对象，对象的引用以及对象的状态必须同时对其他线程可见。可以通过以下方式安全发布对象：
+1. 静态初始化函数中初始化一个对象引用
+2. 将对象引用保存到 volatile 类型的域或者 AtomicReference 对象中
+3. 将对象引用保存到某个正确构造对象的 final 类型域中
+4. 将对象引用保存到一个由锁保护的域中
+
+发布一个静态构造对象，最简单和最安全的方式是使用静态初始化器。静态初始化器由 JVM 在类的初始化阶段执行，由 JVM 保证同步
+```java
+public static Holder holder = new Holder(100);
+```
+
+HTTP连接池有以下优势：
+降低了频繁建立HTTP连接的时间开销，减少了TCP连接建立和释放时socket通信服务器端资源的浪费；
+支持更高的并发量
+
+```
+public class HttpConnectManager {
+
+   public static void main(String[] args) throws Exception {
+       //创建HTTP的连接池管理对象
+       PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
+        //将最大连接数增加到200
+       connectionManager.setMaxTotal(200);
+       //将每个路由的默认最大连接数增加到20
+       connectionManager.setDefaultMaxPerRoute(20);
+       //将http://www.baidu.com:80的最大连接增加到50
+       //HttpHost httpHost = new HttpHost("http://www.baidu.com",80);
+       //connectionManager.setMaxPerRoute(new HttpRoute(httpHost),50);
+
+       //发起3次GET请求
+       String url ="https://www.baidu.com/s?word=java";
+       long start = System.currentTimeMillis();
+       for (int i=0;i<100;i++){
+           doGet(connectionManager, url);
+       }
+       long end = System.currentTimeMillis();
+       System.out.println("consume -> " + (end - start));
+
+       //清理无效连接
+       new IdleConnectionEvictor(connectionManager).start();
+   }
+
+   /**
+    * 请求重试处理
+    * @param tryTimes 重试次数
+    * @return
+    */
+   public static HttpRequestRetryHandler retryHandler(final int tryTimes){
+
+       HttpRequestRetryHandler httpRequestRetryHandler = new HttpRequestRetryHandler() {
+           @Override
+           public boolean retryRequest(IOException exception, int executionCount, HttpContext context) {
+                // 如果已经重试了n次，就放弃
+               if (executionCount >= tryTimes) {
+                   return false;
+               }
+               // 如果服务器丢掉了连接，那么就重试
+               if (exception instanceof NoHttpResponseException) {
+                   return true;
+               }
+               // 不要重试SSL握手异常
+               if (exception instanceof SSLHandshakeException) {
+                   return false;
+               }
+               // 超时
+               if (exception instanceof InterruptedIOException) {
+                   return false;
+               }
+               // 目标服务器不可达
+               if (exception instanceof UnknownHostException) {
+                   return true;
+               }
+               // 连接被拒绝
+               if (exception instanceof ConnectTimeoutException) {
+                   return false;
+               }
+               // SSL握手异常
+               if (exception instanceof SSLException) {
+                   return false;
+               }
+               HttpClientContext clientContext = HttpClientContext .adapt(context);
+               HttpRequest request = clientContext.getRequest();
+               // 如果请求是幂等的，就再次尝试
+               if (!(request instanceof HttpEntityEnclosingRequest)) {
+                   return true;
+               }
+               return false;
+           }
+       };
+       return httpRequestRetryHandler;
+   }
+
+   /**
+    * doGet
+    * @param url 请求地址
+    * @param connectionManager
+    * @throws Exception
+    */
+   public static void doGet(HttpClientConnectionManager connectionManager,String url) throws Exception {
+        //从连接池中获取client对象，多例
+       CloseableHttpClient httpClient = HttpClients.custom()
+               .setConnectionManager(connectionManager)
+               .setRetryHandler(retryHandler(5)).build();
+
+       // 创建http GET请求
+       HttpGet httpGet = new HttpGet(url);
+       // 构建请求配置信息
+       RequestConfig config = RequestConfig.custom().setConnectTimeout(1000) // 创建连接的最长时间
+                .setConnectionRequestTimeout(500) // 从连接池中获取到连接的最长时间
+               .setSocketTimeout(10 * 1000) // 数据传输的最长时间10s
+               .setStaleConnectionCheckEnabled(true) // 提交请求前测试连接是否可用
+               .build();
+       // 设置请求配置信息
+       httpGet.setConfig(config);
+
+       CloseableHttpResponse response = null;
+       try {
+           // 执行请求
+           response = httpClient.execute(httpGet);
+           // 判断返回状态是否为200
+           if (response.getStatusLine().getStatusCode() == 200) {
+               String content = EntityUtils.toString(response.getEntity(), "UTF-8");
+               System.out.println("内容长度：" + content.length());
+           }
+       } finally {
+           if (response != null) {
+               response.close();
+           }
+           // 此处不能关闭httpClient，如果关闭httpClient，连接池也会销毁
+           // httpClient.close();
+       }
+   }
+
+   /**
+    * 监听连接池中空闲连接，清理无效连接
+    */
+   public static class IdleConnectionEvictor extends Thread {
+
+       private final HttpClientConnectionManager connectionManager;
+
+       private volatile boolean shutdown;
+
+       public IdleConnectionEvictor(HttpClientConnectionManager connectionManager) {
+           this.connectionManager = connectionManager;
+       }
+
+       @Override
+       public void run() {
+           try {
+               while (!shutdown) {
+                   synchronized (this) {
+                       //3s检查一次
+                       wait(3000);
+                       // 关闭失效的连接
+                       connectionManager.closeExpiredConnections();
+                   }
+               }
+           } catch (InterruptedException ex) {
+               // 结束
+               ex.printStackTrace();
+           }
+       }
+
+       public void shutdown() {
+           shutdown = true;
+           synchronized (this) {
+               notifyAll();
+           }
+       }
+   }
+}
+```
+
+```
+/**
+* 多线程-HttpClient连接池管理HTTP请求实例
+*/
+public class MultiThreadHttpConnManager {
+   public static void main(String[] args) {
+       //连接池对象
+       PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
+      //将最大连接数增加到200
+       connectionManager.setMaxTotal(200);
+       //将每个路由的默认最大连接数增加到20
+       connectionManager.setDefaultMaxPerRoute(20);
+       //HttpClient对象
+       CloseableHttpClient httpClient = HttpClients.custom().setConnectionManager(connectionManager).build();
+        //URIs to DoGet
+       String[] urisToGet = {
+               "https://www.baidu.com/s?word=java",
+               "https://www.baidu.com/s?word=java",
+               "https://www.baidu.com/s?word=java",
+               "https://www.baidu.com/s?word=java"
+       };
+       //为每一个URI创建一个线程
+       GetThread[] threads = new GetThread[urisToGet.length];
+       for (int i=0;i<threads.length;i++){
+           HttpGet httpGet = new HttpGet(urisToGet[i]);
+           threads[i] = new GetThread(httpClient,httpGet);
+       }
+       //启动线程
+       for (int j=0;j<threads.length;j++){
+           threads[j].start();
+       }
+       //join 线程
+       for(int k=0;k<threads.length;k++){
+           try {
+               threads[k].join();
+           } catch (InterruptedException e) {
+               e.printStackTrace();
+           }
+       }
+   }
+
+   /**
+    * 执行Get请求线程
+    */
+   public static class GetThread extends Thread{
+       private final CloseableHttpClient httpClient;
+       private final HttpContext context;
+       private final HttpGet httpget;
+       public GetThread(CloseableHttpClient httpClient, HttpGet httpget) {
+           this.httpClient = httpClient;
+           this.context = HttpClientContext.create();
+           this.httpget = httpget;
+       }
+       @Override
+       public void run() {
+           try {
+               CloseableHttpResponse response = httpClient.execute(httpget,context);
+               try {
+                   HttpEntity entity = response.getEntity();
+               }finally {
+                   response.close();
+               }
+           }catch (ClientProtocolException ex){
+               //处理客户端协议异常
+           }catch (IOException ex){
+               //处理客户端IO异常
+           }
+       }
+   }
+}
+```
+
+
+HTTPS 成本
+证书费用以及更新维护
+HTTPS 降低用户访问速度
+HTTPS 消耗 CPU 资源
+
+使用 session 防止表单重复提交
+1. 在网络延迟的情况下，用户多次提交表单
+2. 表单提交后刷新导致表单重复提交
+3. 用户提交表单后，回退到表单页面后进行再次提交
+
+解决方案
+1. 用JavaScript控制Form表单只能提交一次（按钮点击之后不可用）
+2. token
+
+跨域
+spring boot
+```
+@Configuration
+public class CustomCORSConfiguration {
+ private CorsConfiguration buildConfig() {
+   CorsConfiguration corsConfiguration = new CorsConfiguration();
+   corsConfiguration.addAllowedOrigin("*");
+   corsConfiguration.addAllowedHeader("*");
+   corsConfiguration.addAllowedMethod("*");
+   return corsConfiguration;
+ }
+
+ @Bean
+ public CorsFilter corsFilter() {
+   UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+   source.registerCorsConfiguration("/**", buildConfig());
+   return new CorsFilter(source);
+ }
+}
+```
+
+@Profile注解组合使用@Configuration和@Component注解
+@Profile("prod")
+同时激活多个配置
+spring.profiles.active: prod,proddb,prodmq
+
+RBAC
+RBAC 是基于角色的访问控制（Role-Based Access Control ）在 RBAC 中，权限与角色相关联，用户通过成为适当角色的成员而得到这些角色的权限。这就极大地简化了权限的管理。这样管理都是层级相互依赖的，权限赋予给角色，而把角色又赋予用户，这样的权限设计很清楚，管理起来很方便
+
+XSS
+1. 反射型：url 参数直接注入
+2. 存储型：存储到 DB 后读取时注入
+
+XSS 攻击点
+1. HTML 节点内容
+转义 < 与 >
+
+2. HTML 属性
+转义 &
+转义 " 与 '
+
+3. js 代码
+json encode: JSON.stringify
+
+4. 富文本
+白名单方式：只允许白名单中的标签与属性
+黑名单方式
+
+使用http only的cookie
+
+浏览器内置防御：参数出现在 HTML 内容或属性
+
+CSRF：跨站请求伪造
+利用用户登录状态
+用户不知情完成业务请求
+
+CSRS 防御
+1. same-site 属性：拦截对用户登录态利用（并不是所有浏览器支持）
+2. 在前端页面加入验证信息（图形验证码，token）
+3. referer
+
+```
+meta(name="csrf_token", content=csrfToken)
+```
+
+cookie 特性
+1. 前端数据存储
+2. 后端通过 http 头设置
+3. 请求时通过 http 头传给后端
+4. 前端可读写
+5. 遵守同源策略
+
+cookies 属性
+1. 域名
+2. 有效期
+3. 路径
+4. http-only：只能被 http 协议使用
+5. secure：是否支持 https 协议
+
+cookies 作用
+1. 存储个性化设置
+2. 存储未登录时用户唯一标识
+3. 存储已登录用户凭证
+
+登录用户凭证
+1. 用户 id
+2. 用户 id + 签名
+3. sessionId
+
+XSS 窃取 cookies
+1. http-only 的 cookies 不会被窃取
+
+防御点击劫持
+1. js 禁止内嵌
+2. X-FRAME-OPTIONS 禁止内嵌
+
+traceroute www.baidu.com
+
+HTTP 篡改
+1. 插入广告
+2. 重定向网站
+3. 无法防御 xss 和 csrf 攻击
+
+确定服务器身份
+1. 浏览器内置信任列表
+2. 服务器从 CA 申请证书
+3. CA 验证服务器域名并颁发证书
+4. 浏览器发起请求
+5. 服务器出具证书
+6. 浏览器验证通过
+
+密码安全
+帮助用户加强复杂度：多次变换，加盐，随机字符串
+https 传输
+频率限制
+前端加密
+
+防御 SQL 注入
+1. 关闭 SQL 错误输出
+2. 检查数据类型
+3. 对数据进行转义
+4. 参数化查询
+
+数据库用户权利最小化
+
+上传问题
+1. 限制上传后缀
+2. 文件类型检查
+3. 文件内容检查
+4. 程序输出
+5. 权限控制，可写与可执行互斥
+
+DOS 攻击防御
+1. 避免重逻辑业务
+2. 快速失败快速返回
+3. 防止雪崩机制
+4. 有损服务
+5. CDN
+
+重放攻击防御
+1. HTTPS 加密
+2. 时间戳
+3. token
+
+
+POST提交数据的方式
+1. application/x-www-form-urlencoded：提交数据表单时经常使用，Body内部存放的是转码后的键值对
+```
+POST http://xyz.com HTTP/1.1
+Content-Type: application/x-www-form-urlencoded;charset=utf-8
+a=1&b=2&c=3&c=4
+```
+2. application/json：提交结构化表单时使用，Body内部存放的是JSON字符串
+```
+POST http://xyz.com HTTP/1.1
+Content-Type: application/json;charset=utf-8
+{"a": 1, "b": 2, "c": [3, 4]}
+```
+3. multipart/form-data：上传文件时经常使用
+```
+POST /upload HTTP/1.1
+Content-Length:xxxxx
+Content-Type:multipart/form-data; boundary=----WebKitFormBoundaryKOThiwE6HubGib7j
+Host:example.com
+------WebKitFormBoundaryKOThiwE6HubGib7j
+Content-Disposition: form-data; name="key1"
+value1
+------WebKitFormBoundaryKOThiwE6HubGib7j
+Content-Disposition: form-data; name="key2"
+value2
+------WebKitFormBoundaryKOThiwE6HubGib7j
+Content-Disposition: form-data; name="file1"; filename="file1name.png"
+Content-Type: image/png
+file1 content here
+------WebKitFormBoundaryKOThiwE6HubGib7j
+Content-Disposition: form-data; name="file2"; filename="file2name.jpeg"
+Content-Type: image/jpeg
+file2 content here
+------WebKitFormBoundaryKOThiwE6HubGib7j--
+```
+
+解决跨域
+JSONP通过HTML的script标记实现了跨域共享数据的方式。JSON通过在网页里定义一个回调方法，然后在页面上插入一个动态script标签，指向目标调用地址。服务器会返回一段javascript代码，一般是some_callback(data)这种形式的回调。该段代码会在浏览器里自动执行，于是网页就得到了跨域服务器返回的数据
+```
+<script>
+function some_callback(data) {
+   console.log(data)
+}
+</script>
+<script src="http://example.com/someapi?callback=some_callback">
+</script>
+```
+JSONP是否可以获取到数据还需要服务器对这种调用提供显示支持，服务器必须将数据以javascript代码的形式返回才可以传递给浏览器
+
+CORS(Cross-Origin Resource Sharing)
+JSONP的不足在于它只能发送GET请求，并且不能携带cookie。而CORS则可以发送任意类型的请求，可以选择性携带cookie。
+CORS是通过Ajax发送的跨域请求技术。CORS的请求分为两种，一种是简单请求，一种是复杂请求。简单请求就是头部很少很简单的GET/HEAD/POST请求。复杂请求就是非简单请求
+如果是复杂请求，要走一个预检的流程。预检就是浏览器先向服务器发送一个Method为Options的请求，如果服务器允许跨域请求，浏览器再发起这个Ajax请求。所以CORS的复杂请求会比简单请求额外耗费一个TTL的时间
+
+TCP三次握手和四次挥手？
+客户端–发送带有SYN标志的数据包–一次握手–服务端
+服务端–发送带有SYN/ACK标志的数据包–二次握手–客户端
+客户端–发送带有带有ACK标志的数据包–三次握手–服务端
+四次挥手：
+客户端-发送一个FIN，用来关闭客户端到服务器的数据传送
+服务器-收到这个FIN，它发回一个ACK，确认序号为收到的序号加1 。和SYN一样，一个FIN将占用一个序号
+服务器-关闭与客户端的连接，发送一个FIN给客户端
+客户端-发回ACK报文确认，并将确认序号设置为收到序号加1
+
+JWT 与 Session 方式存储 id 的差异
+Session方式存储用户id的最大弊病在于要占用大量服务器内存
+
+AtomicStampedReference来解决ABA问题
+
+HashMap
+https://mp.weixin.qq.com/s/HzRH9ZJYmidzW5jrMvEi4w
+
+invokeAll()/invokeAny()
+https://mp.weixin.qq.com/s/XTa3pONjjtu8FSr9Y3rgzQ
+
+ThreadLocal
+
+
+NIO
+https://juejin.im/post/5afad7b1f265da0b7f44b60b?utm_medium=be&utm_source=weixinqun
+https://juejin.im/post/5af7f01b6fb9a07a9f01a339?utm_medium=be&utm_source=weixinqun
+https://juejin.im/post/5af80322f265da0b981b8b9e?utm_medium=be&utm_source=weixinqun
+
+https://mp.weixin.qq.com/s/nwniFqdm2h5zEn9eGPYlig
+https://mp.weixin.qq.com/s/6lcCFTr74Tl_rIPpsYdkaw
+
+static
+类属性中被static所引用的变量，会被作为GC的root根节点。作为根节点就意味着，这一类变量是基本上不会被回收的。因此，static很容易引入内存泄漏的风险
+
+ThreadLocal 可以保存"key : value"键值对，一个ThreadLocal只能保存一个
+在ThreadLoalMap中，也是初始化一个大小16的Entry数组，Entry对象用来保存每一个key-value键值对，只不过这里的key永远都是ThreadLocal对象，是不是很神奇，通过ThreadLocal对象的set方法，结果把ThreadLocal对象自己当做key，放进了ThreadLoalMap中
+
+ThreadLoalMap的Entry是继承WeakReference，和HashMap很大的区别是，Entry中没有next字段，所以就不存在链表的情况
+
+hash冲突
+每个ThreadLocal对象都有一个hash值 threadLocalHashCode，每初始化一个ThreadLocal对象，hash值就增加一个固定的大小 0x61c88647。
+
+在插入过程中，根据ThreadLocal对象的hash值，定位到table中的位置i，过程如下： 1、如果当前位置是空的，那么正好，就初始化一个Entry对象放在位置i上； 2、不巧，位置i已经有Entry对象了，如果这个Entry对象的key正好是即将设置的key，那么重新设置Entry中的value； 3、很不巧，位置i的Entry对象，和即将设置的key没关系，那么只能找下一个空位置；
+
+这样的话，在get的时候，也会根据ThreadLocal对象的hash值，定位到table中的位置，然后判断该位置Entry对象中的key是否和get的key一致，如果不一致，就判断下一个位置
+
+可以发现，set和get如果冲突严重的话，效率很低，因为ThreadLoalMap是Thread的一个属性，所以即使在自己的代码中控制了设置的元素个数，但还是不能控制其它代码的行为
+
+ThreadLocal可能导致内存泄漏
+创建ThreadLocal的线程一直持续运行，那么这个Entry对象中的value就有可能一直得不到回收，发生内存泄露
+
+在调用ThreadLocal的get()、set()可能会清除ThreadLocalMap中key为null的Entry对象，这样对应的value就没有GC Roots可达了，下次GC的时候就可以被回收，当然如果调用remove方法，肯定会删除对应的Entry对象
+
+如果使用ThreadLocal的set方法之后，没有显示的调用remove方法，就有可能发生内存泄露，所以养成良好的编程习惯十分重要，使用完ThreadLocal之后，记得调用remove方法
+
+spring 事务
+TransactionDefinition 用于描述事务的隔离级别、超时时间、是否为只读事务和事务传播规则等控制事务具体行为的事务属性
+
+PlatformTransactionManager 根据 TransactionDefinition 提供的事务属性配置信息创建事务，并用 TransactionStatus 描述这个激活事务的状态
+
+TransactionStatus 代表一个事务的具体运行状态，事务管理器可以通过该接口获取事务运行期的状态信息。该接口继承与 SavepointManager 接口，SavepointManager 接口拥有以下几个方法：
+```
+// 创建一个保存点对象
+Object createSavepoint();
+// 将事务回滚到特定的保存点上，被回滚的保存点将自动释放
+void rollbackToSavepoint(Object savepoint);
+// 释放一个保存点，若事务提交，则所有保存点会被自动释放
+void releaseSavepoint(Object savepoint);
+```
+
+TransactionStatus 扩展 SavepointManager 接口，提供以下方法
+```
+// 判断当前事务是否在内部创建了一个保存点
+boolean hasSavepoint();
+// 判断当前事务是否是一个新的事务
+boolean isNewTransaction();
+// 判断当前事务是否已经结束
+boolean isCompleted();
+// 判断当前事务是否已经被标识为 rollback-only
+boolean isRollbackOnly();
+// 将当前事务设置为 rollback-only，通过该事务同时事务管理器只能将事务回滚
+void setRollbackOnly();
+```
+
+PlatformTransactionManager 定义以下接口方法
+```
+// 根据事务定义信息从事务环境中返回一个已存在的事务，或者创建一个新的事务
+TransactionStatus getTransaction(TransactionDefinition definition);
+// 根据事务状态提交事务
+commit(TransactionStatus status);
+// 将事务回滚
+rollback(TransactionStatus status);
+```
+
+DataSourceTransactionManager 使用 DataSource 的 Connection 的 commit()、rollback() 等方法管理事务
+
+PROPAGATION_REQUIRED：若当前没有事务，则创建一个事务；若已经存在一个事务，则加入到这个事务中
+PROPAGATION_SUPPORTS：支持当前事务。若当前没有事务，则以非事务方式执行
+PROPAGATION_MANDATORY：使用当前事务、若当前没有事务，则抛出异常
+PROPAGATION_REQUIRES_NEW：创建事务。若当前存在事务，则把当前事务挂起
+PROPAGATION_NOT_SUPPORTED：以非事务方式执行操作。若当前存在事务，则把当前事务挂起
+PROPAGATION_NEVER：以非事务方式执行操作。若当前存在事务，则抛出异常
+PROPAGATION_NESTED：若当前存在事务，则在嵌套事务内执行；若当前没有事务，则执行与 PROPAGATION_REQUIRED 类似的操作
+
+默认情况下，当发生运行期异常时，事务将被回滚；当发生检查型异常时，既不回滚也不提交，控制器交给外层调用
+
+基于 aop/tx 命名空间的配置
+```
+<bean id="txManager"
+  class="org.springframework.datasource.DatasourceTransactionManager"
+  p:dataSource-ref="dataSource" />
+
+<aop:config>
+  <aop:pointcut id="serviceMethod"
+    expression="execution(* com.pain.service.*Service.*(..))" />
+  <aop:advisor pointcut-ref="serviceMethod" advice-ref="txAdvice" />
+</aop:config>
+
+<tx:advice id="txAdvice" transaction-manager="txManager">
+  <tx:attributes>
+    <tx:method name="get*" read-only="false" />
+    <tx:method name="add*" rollback-for="Exception" />
+    <tx:method name="update*" />
+  </tx:attributes>
+</tx:advice>
+```
+
+注解配置事务
+```
+<bean id="txManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+    <property name="dataSource" ref="dataSource" />
+</bean>
+
+对标准 @Transactional 注解的 Bean 进行加工处理，以织入事务管理切面
+<tx:annotation-driven transaction-manager="txManager" proxy-target-class="true" />
+```
+<tx:annotation-driven> 还有两个属性：
+1. proxy-target-class：若为 true 则通过创建子类来代理业务类；若为 false 则使用基于接口的代理
+2. order：若业务类除事务切面外，还需要织入其他的切面，则通过该属性可以控制事务切面在目标连接点的织入顺序
+
+@Transactional 默认事务属性
+事务传播行为：PROPAGATION_REQUIRED
+事务隔离级别：ISOLATION_DEFAULT
+读写事务属性：读/写事务
+超时时间：依赖于底层的事务系统的默认值
+回滚设置：任何运行期异常引发回滚，任何检查型异常不会引发回滚
+
+事务增强
+基于接口的动态代理：除 public 外的其他所有方法。此外，public static 也不能被增强
+基于 CGLib 的动态代理：private, static, final 方法
+
+
+
+
+
+
