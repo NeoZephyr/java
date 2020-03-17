@@ -1,25 +1,284 @@
-## `Lock` 接口
+## 活跃性问题
+### 活锁
+两个线程互相谦让，即使没有发生阻塞，也会导致程序执行不下去。解决方法比较简单，就是尝试等待一个随机的时间
+
 ```java
-public interface Lock {
-    void lock();
-    
-    // 可以响应中断，如果被其他线程中断，抛出 `InterruptedException` 异常
-    void lockInterruptibly() throws InterruptedException;
-    
-    // 尝试获取锁，若获取成功，返回 `true`，否则返回 `false`
-    boolean tryLock();
-    
-    // 尝试获取锁失败则阻塞等待，等待最长时间为指定的参数
-    // 若在等待时发生中断抛出 `InterruptedException` 异常，若在等待时获得了锁，返回 `true`
-    boolean tryLock(long time, TimeUnit unit) throws InterruptedException;
-    
-    
-    void unlock();
-    
-    // 新建一个条件，一个 `Lock` 可关联多个条件
-    Condition newCondition();
+class Account {
+    private int balance;
+    private final Lock lock = new ReentrantLock();
+
+    void transfer(Account account, int amount) {
+        while (true) {
+            if (this.lock.tryLock()) {
+                try {
+                    if (tar.lock.tryLock()) {
+                        try {
+                            this.balance -= amount;
+                            tar.balance += amount;
+                            break;
+                        } finally {
+                            tar.lock.unlock();
+                        }
+                    }
+                } finally {
+                    this.lock.unlock();
+                }
+            }
+        }
+    }
 }
 ```
+
+
+### 饥饿
+线程因无法访问所需资源而无法执行下去。解决饥饿问题有以下方法：
+1. 保证资源充足
+2. 公平地分配资源（使用公平锁，排在等待队列前面的线程会优先获得资源）
+3. 避免持有锁的线程长时间执行
+
+
+## 性能问题
+1. 使用无锁的算法和数据结构。例如：线程本地存储、写入时复制、乐观锁等
+2. 减少锁持有的时间。例如：使用细粒度的锁、使用读写锁
+
+
+## 注意事项
+1. Integer 和 String 类型的对象在 JVM 里面是可能被重用的，不适合做锁。锁应该是私有的、不可变的、不可重用的
+2. 多个线程安全操作组合，可能导致线程不安全
+
+
+## ReentrantLock 与 synchronized
+### 相同点
+1. 都是独占锁，也是悲观锁
+2. 都具有可重入性（通过记录锁的持有线程和持有数量实现）
+3. 都具有内存可见性：释放锁时，把共享变量的最新值刷新到主内存；获得锁后，将清空工作内存中共享变量的值，从而使用共享变量时需要从主内存中重新读取最新的值
+
+### 不同点
+1. ReentrantLock 是类，synchronized 属于关键字
+2. ReentrantLock 由 jdk 实现，synchronized 依赖 jvm 实现
+3. ReentrantLock 提供能够中断等待锁的线程的机制，可以破坏死锁条件，synchronized 不支持
+4. ReentrantLock 支持以非阻塞方式获取锁、限时等，可以破坏死锁条件，相对于 synchronized 更加灵活
+5. ReentrantLock 可以指定为公平锁或非公平锁，synchronized 不能
+6. ReentrantLock 提供 Condition 类，可以分组唤醒需要唤醒的线程
+
+
+## Lock api
+```java
+void lock();
+void unlock();
+```
+
+支持中断的 api，如果被其他线程中断，抛出 `InterruptedException` 异常
+```java
+void lockInterruptibly() throws InterruptedException;
+```
+
+支持非阻塞获取锁的 api，获取成功返回 `true`，否则返回 `false`
+```java
+boolean tryLock();
+```
+
+支持超时的 api，若在等待时发生中断抛出 `InterruptedException` 异常，若在等待时获得了锁，返回 `true`
+```java
+boolean tryLock(long time, TimeUnit unit) throws InterruptedException;
+```
+
+
+## 公平锁与非公平锁
+ReentrantLock 和 synchronized 都是默认使用非公平锁，但 synchronized 无法设置公平锁
+
+锁都对应着一个等待队列，如果一个线程没有获得锁，就会进入等待队列，当有线程释放锁的时候，就需要从等待队列中唤醒一个等待的线程。如果是公平锁，唤醒的策略就是谁等待的时间长，就唤醒谁，很公平；如果是非公平锁，当锁被释放之后，正好来了另外一个线程获取锁，那么该线程就获取到锁而不用排队
+
+公平锁是减少线程饥饿情况发生的一个办法，但保证公平会让活跃线程得不到锁，进入等待状态，引起上下文切换，降低了整体的效率
+
+在恢复一个被挂起线程与该线程真正开始运行之间，存在着一个很严重的延迟，这是由于线程间上下文切换带来的。因为这个延迟，造成公平锁在使用中出现 CPU 空闲。而非公平锁正是将这个延迟带来的时间差利用起来，优先让正在运行的线程获得锁，避免线程的上下文切换
+
+
+## Lock 示例
+```java
+public class BlockedQueue<T> {
+    final Lock lock = new ReentrantLock();
+
+    final Condition notFull = lock.newCondition();
+    final Condition notEmpty = lock.newCondition();
+
+    void enqueue(T x) {
+        lock.lock();
+
+        try {
+            while (full) {
+                // 进入等待。被唤醒之后，并不立即执行，仅仅是从条件变量的等待队列进到入口等待队列里面
+                // 因此，当再次执行的时候，条件可能已经不满足了，所以需要以循环方式检验条件变量
+                notFull.await();
+            }
+
+            notEmpty.signal();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    void dequeue() {
+        lock.lock();
+
+        try {
+            while (empty) {
+                notEmpty.await();
+            }
+
+            notFull.signal();
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+signal 与 signalAll。如果要使用 signal，需要考虑以下三个条件：
+1. 所有等待线程拥有相同的等待条件
+2. 所有等待线程被唤醒后，执行相同的操作
+3. 只需要唤醒一个线程
+
+
+## ReadWriteLock
+多个线程的读操作可以并行，在读多写少的场景中，让读操作并行可以明显提高性能
+
+内部使用同一个整数变量表示锁的状态，16 位用于读锁，16 位用于写锁。使用一个变量便于进行 CAS 操作，锁的等待队列其实也只有一个。写锁的获取需要确保当前没有其他线程持有任何锁，否则就等待。写锁释放后，也就是将等待队列中的第一个线程唤醒，唤醒的可能是等待读锁的，也可能是等待写锁的。读锁的获取只需要写锁没有被持有就可以获取。在获取到读锁后会检查等待队列，逐个唤醒最前面的等待读锁的线程，直到第一个等待写锁的线程。若有其他线程持有写锁，获取读锁会等待
+
+```java
+class Cache<K, V> {
+    final Map<K, V> m = new HashMap<>();
+    final ReadWriteLock lock = new ReentrantReadWriteLock();
+
+    final Lock readLock = lock.readLock();
+    final Lock writeLock = lock.writeLock();
+
+    V get(K key) {
+        V v = null;
+        readLock.lock();
+
+        try {
+            V v = m.get(key);
+        } finally {
+            readLock.unlock();
+        }
+
+        if (v != null) {
+            return v;
+        }
+
+        writeLock.lock();
+
+        try {
+            // 再次验证，避免高并发场景下重复查询数据的问题
+            v = m.get(key);
+
+            if (v == null) {
+                // todo get v
+                m.put(key, v);
+            }
+        } finally {
+            writeLock.unlock();
+        }
+
+        return v;
+    }
+}
+```
+
+ReadWriteLock 并不支持锁的升级，但允许锁的降级
+```java
+volatile boolean cacheValid;
+
+r.lock();
+
+if (!cacheValid) {
+    // 释放读锁，因为不允许读锁的升级
+    r.unlock();
+    w.lock();
+
+    try {
+        if (!cacheValid) {
+            // get data
+            cacheValid = true;
+        }
+
+        // 释放写锁前，降级为读锁
+        r.lock();
+    } finally {
+        w.unlock();
+    }
+
+    try {
+        use(data);
+    } finally {
+        r.unlock();
+    }
+}
+```
+
+只有写锁支持条件变量，读锁是不支持条件变量的，读锁调用 newCondition() 会抛出 UnsupportedOperationException 异常
+
+
+## StampedLock
+乐观读
+```java
+final StampedLock lock = new StampedLock();
+
+// 获取悲观读锁
+long stamp = lock.readLock();
+
+try {
+    // TODO
+} finally {
+    lock.unlockRead(stamp);
+}
+```
+```java
+final StampedLock lock = new StampedLock();
+
+// 获取写锁
+long stamp = sl.writeLock();
+
+try {
+    // TODO
+} finally {
+    lock.unlockWrite(stamp);
+}
+```
+
+StampedLock 的性能之所以比 ReadWriteLock 好，其关键是 StampedLock 支持乐观读的方式。ReadWriteLock 支持多个线程同时读，但是当多个线程同时读的时候，所有的写操作会被阻塞；而 StampedLock 提供的乐观读，是允许一个线程获取写锁的，也就是说不是所有的写操作都被阻塞
+
+```java
+final StampedLock lock = new StampedLock();
+
+// 乐观读
+long stamp = lock.tryOptimisticRead();
+int curX = x;
+int curY = y;
+
+// 判断执行读操作期间，是否存在写操作，如果存在则返回 false
+if (!lock.validate(stamp)) {
+
+    // 升级为悲观读锁
+    stamp = lock.readLock();
+
+    try {
+        curX = x;
+        curY = y;
+    } finally {
+        lock.unlockRead(stamp);
+    }
+}
+
+return Math.sqrt(curX * curX + curY * curY);
+```
+
+有几点需要注意：
+1. StampedLock 不支持重入
+2. StampedLock 的悲观读锁、写锁都不支持条件变量
+3. 使用 StampedLock 一定不要调用中断操作，如果需要支持中断功能，一定使用可中断的悲观读锁 readLockInterruptibly() 和写锁 writeLockInterruptibly()。否则可能导致 cpu 飙升
+
 
 ## `AbstractQueuedSynchronizer`
 ```java
@@ -453,183 +712,3 @@ public final boolean hasQueuedThread(Thread thread) { ... }
 // 等待锁的线程数
 public final int getQueueLength() { ... }
 ```
-
-### 公平锁与非公平锁
-`ReentrantLock` 和 `synchronized` 都是默认使用非公平锁，但内置锁无法设置公平锁
-#### 公平锁
-在调用 `tryAcquire` 方法获取锁时，若当前未被锁定，`FairSync` 需要先检查是否存在其他等待时间更长的线程，当不存在时才会获取锁。公平性是减少线程饥饿情况发生的一个办法，但保证公平会让活跃线程得不到锁，进入等待状态，引起上下文切换，降低了整体的效率
-
-#### 非公平锁
-非公平锁在线程间竞争锁资源激烈的情况下，性能更高；若每个线程获得锁的时间都很长，或者请求锁的竞争很稀疏或不频繁，则公平锁更为适合
-
-> 在恢复一个被挂起线程与该线程真正开始运行之间，存在着一个很严重的延迟，这是由于线程间上下文切换带来的。因为这个延迟，造成公平锁在使用中出现 CPU 空闲。而非公平锁正是将这个延迟带来的时间差利用起来，优先让正在运行的线程获得锁，避免线程的上下文切换
-
-## `ReadWriteLock`
-```java
-public interface ReadWriteLock {
-    Lock readLock();
-    Lock writeLock();
-}
-```
-
-## `ReentrantReadWriteLock`
-多个线程的读操作可以并行，在读多写少的场景中，让读操作并行可以明显提高性能
-```java
-public class ReentrantReadWriteLock
-        implements ReadWriteLock, java.io.Serializable {
-
-    
-    private final ReentrantReadWriteLock.ReadLock readerLock;
-    private final ReentrantReadWriteLock.WriteLock writerLock;
-    
-    final Sync sync;
-    
-    public ReentrantReadWriteLock() {
-        this(false);
-    }
-    
-    public ReentrantReadWriteLock(boolean fair) {
-        sync = fair ? new FairSync() : new NonfairSync();
-        readerLock = new ReadLock(this);
-        writerLock = new WriteLock(this);
-    }
-    
-    abstract static class Sync extends AbstractQueuedSynchronizer { ... }
-    
-    public static class ReadLock implements Lock, java.io.Serializable { ... }
-    
-    public static class WriteLock implements Lock, java.io.Serializable { ... }
-}
-```
-内部使用同一个整数变量表示锁的状态，16 位用于读锁，16 位用于写锁。使用一个变量便于进行 CAS 操作，锁的等待队列其实也只有一个。写锁的获取需要确保当前没有其他线程持有任何锁，否则就等待。写锁释放后，也就是将等待队列中的第一个线程唤醒，唤醒的可能是等待读锁的，也可能是等待写锁的。读锁的获取只需要写锁没有被持有就可以获取。在获取到读锁后会检查等待队列，逐个唤醒最前面的等待读锁的线程，直到第一个等待写锁的线程。若有其他线程持有写锁，获取读锁会等待
-
-### 获取写锁
-```java
-public ReentrantReadWriteLock.WriteLock writeLock() { return writerLock; }
-```
-
-### 获取读锁
-```java
-public ReentrantReadWriteLock.ReadLock  readLock()  { return readerLock; }
-```
-
-## `StampedLock`
-乐观读
-```java
-class StampedOperate {
-    private final StampedLock lock = new StampedLock();
-
-    void write() {
-        long stamp = lock.writeLock();
-        try {
-            // do write
-        } finally {
-            lock.unlockWrite(stamp);
-        }
-    }
-
-    Data read() {
-        long stamp = lock.tryOptimisticRead();
-
-        // do read
-
-        if (!lock.validate(stamp)) {
-            stamp = lock.readLock();
-
-            try {
-                // do read
-            } finally {
-                lock.unlockRead(stamp);
-            }
-        }
-
-        return data;
-    }
-}
-```
-
-## `synchronized`
-
-### `synchronized` 用法
-
-#### 修饰实例方法
-保护当前实例对象，即 `this` 对象，`synchronized` 实例方法执行过程如下：
-- 尝试获得锁，如果不能够获得锁则加入等待队列，阻塞（BLOCKED）并等待唤醒 
-- 执行实例方法
-- 释放锁，若等待队列上有等待的线程，唤醒其中一个，若有多个等待的线程，不保证公平性
-
-#### 修饰代码块
-
-#### 修饰静态方法
-保护类对象
-
-### `synchronized` 原理
-#### 对象头
-Hotspot 虚拟机的对象头主要包括两部分数据：Mark Word（标记字段）、Klass Pointer（类型指针）。对象头一般占有两个机器码，若对象是数组类型，则需要三个机器码。其中，Klass Point 指向它的类元数据的指针，虚拟机通过这个指针来确定这个对象所属的类；Mark Word 用于存储对象自身的运行时数据，如哈希码、GC 分代年龄、锁状态标志、线程持有的锁、偏向线程 ID、偏向时间戳等
-
-#### monitor
-任意对象都有一个锁（monitor）和锁等待队列，这是 `synchronized` 实现同步的基础。`synchronized` 就由一对 `monitorenter/monitorexit` 指令实现。每一个被锁住的对象都会和一个 monitor 关联（对象头的 MarkWord 中的 LockWord 指向 monitor 的起始地址），同时 monitor 的 Owner 字段存放拥有该锁的线程的唯一标识，表示该锁被这个线程占用
-
-### `synchronized` 优化
-Java6 之前，monitor 实现完全依靠操作系统内部的互斥锁，因为需要进行用户态到内核态的切换，所有同步操作是一个无差别的重量级操作。Java6 进行优化，增加了从偏向锁到轻量级锁再到重量级锁的过度。其中自旋锁、轻量级锁与偏向锁都属于乐观锁
-
-#### 偏向锁
-偏向锁不适合所有应用场景，因为撤销操作是比较重的操作，只有当存在较多不会真正竞争的 `synchronized` 代码块时，才会体现明显改善。偏向锁会延缓 JIT 预热的进程，所以很多性能测试中会显式地关闭偏斜锁
-```
--XX:-UseBiasedLocking
-```
-
-##### 获取偏向锁
-JVM 利用 CAS 在对象头上的 Mark Word 部分设置线程 id, 以表示这个对象偏向于当前线程，并不涉及真正的互斥锁；若 CAS 操作失败，则表示有竞争，当到达全局安全点（safepoint）时获得偏向锁的线程被挂起，偏向锁升级为轻量级锁，然后被阻塞在安全点的线程继续往下执行同步代码
-
-##### 释放偏向锁
-线程不会主动去释放偏向锁，只有存在竞争时，持有偏向锁的线程才会释放。偏向锁的撤销，需要等待全局安全点，它会首先暂停拥有偏向锁的线程，判断锁对象是否处于被锁定状态，撤销偏向锁后恢复到未锁定或轻量级锁的状态
-
-#### 轻量级锁
-如果有另外的线程试图锁定某个已经偏斜过的对象，JVM 就需要撤销偏斜锁，并切换到轻量级锁实现
-
-#### 重量级锁
-轻量级锁依赖 CAS 操作 Mark Word 来试图获取锁，若获取成功，就使用普通轻量级锁；否则进一步升级为重量级锁
-
-#### 自旋锁
-##### 为什么使用自旋锁
-线程的阻塞和唤醒需要 CPU 从用户态转为核心态，频繁的阻塞和唤醒对 CPU 来说是一件负担很重的工作。而且在许多应用上面，对象锁的锁状态只会持续很短的时间，为了这一段很短的时间频繁地阻塞和唤醒线程非常不值得
-
-##### 工作原理
-线程不会被立即挂起，而是等待持有锁的线程是否会很快释放。由于自旋线程一直占用 CPU 做无用功，所以需要设定一个自旋等待的最大时间。如果争用锁的线程在最大等待时间内还是获取不到锁，就会停止自旋进入阻塞状态
-
-##### 使用场景
-如果锁的竞争不激烈，且占用锁时间非常短，自旋锁能够避免上下文切换带来的开销；如果锁的竞争激烈，或者持有锁的线程需要长时间占用锁执行同步块，这时线程自旋的消耗可能大于线程上下文切换的销毁。自旋锁 JDK1.4 默认关闭，可以使用 `-XX:+UseSpinning` 开启，在 JDK1.6 中默认开启。同时自旋的默认次数为 10 次，可以通过参数 `-XX:PreBlockSpin` 调整
-
-##### 自适应自旋锁
-Java6 引入了适应性自旋锁，自旋的次数不再是固定的，而是由前一次在同一个锁上的自旋时间及锁的拥有者的状态来决定。若线程自旋成功则下次自旋的次数会更加多，若对于某个锁很少有自旋成功的，则减少自旋次数甚至省略掉自旋过程，以免浪费处理器资源
-
-#### 其他优化
-##### 锁消除
-在运行如下代码时，JVM 检测到变量 `vector` 没有逃逸出方法 `test` 之外，可以将 `vector` 内部的加锁操作消除
-```java
-public void test(){
-    Vector<String> vector = new Vector<String>();
-    for (int i = 0 ; i < 10 ; i++) {
-        vector.add(i + "");
-    }
-}
-```
-
-##### 锁粗化
-一系列的连续加锁解锁操作会导致不必要的性能损耗，锁粗化将多个连续的加锁、解锁操作连接在一起，扩展成一个范围更大的锁
-
-## `ReentrantLock` 与 `synchronized`
-
-### 相同点
-1. 都是独占锁，也是悲观锁
-2. 都具有可重入性（通过记录锁的持有线程和持有数量实现）
-3. 都具有内存可见性：释放锁时，把共享变量的最新值刷新到主内存；获得锁后，将清空工作内存中共享变量的值，从而使用共享变量时需要从主内存中重新读取最新的值
-
-### 不同点
-1. `ReentrantLock` 是类，`synchronized` 属于关键字
-2. `ReentrantLock` 由 jdk 实现，`synchronized` 依赖 jvm 实现
-3. `ReentrantLock` 提供能够中断等待锁的线程的机制，`synchronized` 不支持
-4. `ReentrantLock` 支持以非阻塞方式获取锁、限时等，有效的避免了死锁，相对于 `synchronized` 更加灵活
-5. `ReentrantLock` 可以指定为公平锁或非公平锁，`synchronized` 不能
-6. `ReentrantLock` 提供 `Condition` 类，可以分组唤醒需要唤醒的线程

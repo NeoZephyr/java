@@ -1,4 +1,7 @@
-## `Condition` 接口
+synchronized 只有一个条件变量，而 Lock 支持多个条件变量
+
+
+## Condition
 ```java
 public interface Condition {
 
@@ -19,6 +22,53 @@ public interface Condition {
 
 ### `signal`
 `signal/signalAll` 与 `notify/notifyAll` 一样，调用前需要先获取锁，若没有获取锁则会抛出 `IllegalMonitorStateException` 异常。`signal` 挑选一个线程进行唤醒，`signalAll` 唤醒所有等待线程，这些被唤醒的线程需要重新竞争锁，获取锁后才会从 `await` 调用中返回
+
+
+## Condition 示例
+```java
+private final Lock lock = new ReentrantLock();
+private final Condition done = lock.newCondition();
+
+Object get(int timeout) {
+    long start = System.nanoTime();
+    lock.lock();
+
+    try {
+        while (!isDone()) {
+            done.await(timeout);
+
+            long current = System.nanoTime();
+
+            if (isDone() || current - start > timeout) {
+                break;
+            }
+        }
+    } finally {
+        lock.unlock();
+    }
+
+    if (!isDone()) {
+        throw new TimeoutException();
+    }
+
+    return returnFromResponse();
+}
+
+boolean isDone() {
+    return response != null;
+}
+
+void doReceived(Response response) {
+    lock.lock();
+    try {
+        this.response = response;
+        done.signal();
+    } finally {
+        lock.unlock();
+    }
+}
+```
+
 
 ## `AbstractQueuedSynchronizer`
 ```java
@@ -280,55 +330,3 @@ public class ReentrantLock implements Lock, java.io.Serializable {
     }
 }
 ```
-
-## `Object`
-```java
-public class Object {
-    public final native void notify();
-    public final native void notifyAll();
-    
-    public final native void wait(long timeout) throws InterruptedException;
-    
-    public final void wait(long timeout, int nanos) throws InterruptedException {
-        if (timeout < 0) {
-            throw new IllegalArgumentException("timeout value is negative");
-        }
-
-        if (nanos < 0 || nanos > 999999) {
-            throw new IllegalArgumentException(
-                                "nanosecond timeout value out of range");
-        }
-
-        if (nanos > 0) {
-            timeout++;
-        }
-
-        wait(timeout);
-    }
-    
-    public final void wait() throws InterruptedException {
-        wait(0);
-    }
-}
-```
-
-### `wait`
-每个对象有一个条件等待队列，用于线程间的协作。`wait` 调用会把当前线程放到条件队列上并阻塞，等待期间可以被中断，若被中断会抛出 `InterruptedException` 异常；`wait` 只能在 `synchronized` 代码块内被调用，若调用 `wait` 方法时，当前线程没有持有对象锁，会抛出异常 `IllegalMonitorStateException` 异常
-
-`wait` 执行过程如下：
-1. 将当前线程放入条件等待队列，释放对象锁，阻塞等待（WAITING 或 TIMED_WAITING）
-2. 等待时间到或被其他线程唤醒
-3. 重新竞争对象锁，若能获得锁，线程状态变为 RUNNABLE，并从 `wait` 调用中返回，否则该线程加入对象锁等待队列，线程状态变为 BLOCKED，只有在获得锁后才从 `wait` 调用中返回
-4. 从 `wait` 调用中返回后其等待的条件不一定成立，需要重新检查
-
-`sleep` 方法和 `wait` 方法都可以用来放弃 CPU 一定的时间，不同点在于如果线程持有某个对象的监视器，`sleep` 方法不会放弃这个对象的监视器，`wait` 方法会放弃这个对象的监视器
-
-`wait` 方法立即释放对象监视器，`notify`/`notifyAll` 方法则会等待线程剩余代码执行完毕才会放弃对象监视器
-
-### `notify`
-`notify` 从条件队列中选一个线程，将其移除并唤醒；`notifyAll` 移除条件队列中所有的线程并全部唤醒。`notify` 只能在 `synchronized` 代码块内被调用，若调用 `notify` 方法时，当前线程没有持有对象锁，会抛出异常 `IllegalMonitorStateException` 异常
-
-### `notifyAll`
-由于多线程可以基于不同的条件谓词在同一个条件队列上等待，因此如果使用 `notify` 而不是 `notifyAll` 是一种危险的操作，因为单一的通知容易导致类似于信号丢失的问题；而 `notifyAll` 会唤醒所有线程导致他们发生锁的竞争
-
-

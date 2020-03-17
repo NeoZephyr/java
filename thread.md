@@ -1,19 +1,3 @@
-“Serial” is a STW, copying collector which uses a single GC thread.
-“Parallel Scavenge” is a STW, copying collector which uses multiple GC threads.
-“ParNew” is a STW, copying collector which uses multiple GC threads. It differs from “Parallel Scavenge” in that it has enhancements that make it usable with CMS. For example, “ParNew” does the synchronization needed so that it can run during the concurrent phases of CMS.
-
-“Serial Old” is a STW, mark-sweep-compact collector that uses a single GC thread.
-“CMS” (Concurrent Mark Sweep) is a mostly concurrent, low-pause collector.
-“Parallel Old” is a compacting collector that uses multiple GC threads.
-
-
-
-
-
-
-
-
-
 内存屏障共分为四种类型：
 LoadLoad屏障：
 抽象场景：Load1; LoadLoad; Load2
@@ -800,86 +784,6 @@ public static Pattern CHINESE_PATTERN = Pattern.compile(
 
 
 
-
-
-
-
-
-避免死锁的技术：
-加锁顺序
-加锁时限
-死锁检测
-
-interrupted()：测试当前线程是否已经是中断状态，执行后具有状态标志清除为false的功能
-isInterrupted()：测试线程Thread对象是否已经是中断状态，但不清除状态标志
-```java
-public static boolean interrupted() {
-  return currentThread().isInterrupted(true);
-}
-
-public boolean isInterrupted() {
-  return isInterrupted(false);
-}
-
-private native boolean isInterrupted(boolean ClearInterrupted);
-```
-终止正在运行的线程的三种方法：
-使用退出标志
-使用stop方法强行终止线程
-使用interrupt方法中断线程
-
-yield()方法的作用是放弃当前的CPU资源，将它让给其他的任务去占用CPU执行时间。但放弃时间不确定，有可能刚放弃，马上又获得CPU时间片。yield()方法和sleep方法一样，线程并不会让出锁，和wait不同
-
-thread.setDaemon(true)必须在thread.start()之前设置，否则会报IllegalThreadStateException异常；在Daemon线程中产生的新线程也是Daemon的；在使用ExecutorSerice等多线程框架时，会把守护线程转换为用户线程，并且也会把优先级设置为Thread.NORM_PRIORITY，所以如果要使用后台线程就不能用java的线程池。在构建Daemon线程时，不能依靠finally块中的内容来确保执行关闭或清理资源的逻辑
-```java
-// Executors/DefaultThreadFactory
-static class DefaultThreadFactory implements ThreadFactory {
-    private static final AtomicInteger poolNumber = new AtomicInteger(1);
-    private final ThreadGroup group;
-    private final AtomicInteger threadNumber = new AtomicInteger(1);
-    private final String namePrefix;
-
-    DefaultThreadFactory() {
-        SecurityManager s = System.getSecurityManager();
-        group = (s != null) ? s.getThreadGroup() :
-                              Thread.currentThread().getThreadGroup();
-        namePrefix = "pool-" +
-                      poolNumber.getAndIncrement() +
-                     "-thread-";
-    }
-
-    public Thread newThread(Runnable r) {
-        Thread t = new Thread(group, r,
-                              namePrefix + threadNumber.getAndIncrement(),
-                              0);
-        if (t.isDaemon())
-            t.setDaemon(false);
-        if (t.getPriority() != Thread.NORM_PRIORITY)
-            t.setPriority(Thread.NORM_PRIORITY);
-        return t;
-    }
-}
-```
-声明为synchronized的父类方法A，在子类中重写之后并不具备synchronized的特性
-
-ReentrantLock中的其余方法
-int getHoldCount()：查询当前线程保持此锁定的个数，也就是调用lock()方法的次数。
-int getQueueLength()：返回正等待获取此锁定的线程估计数。比如有5个线程，1个线程首先执行await()方法，那么在调用getQueueLength方法后返回值是4，说明有4个线程在等待lock的释放。
-int getWaitQueueLength(Condition condition)：返回等待此锁定相关的给定条件Condition的线程估计数。比如有5个线程，每个线程都执行了同一个condition对象的await方法，则调用getWaitQueueLength(Condition condition)方法时返回的int值是5。
-boolean hasQueuedThread(Thread thread)：查询指定线程是否正在等待获取此锁定。
-boolean hasQueuedThreads()：查询是否有线程正在等待获取此锁定。
-boolean hasWaiters(Condition condition)：查询是否有线程正在等待与此锁定有关的condition条件。
-boolean isFair()：判断是不是公平锁。
-boolean isHeldByCurrentThread()：查询当前线程是否保持此锁定。
-boolean isLocked()：查询此锁定是否由任意线程保持。
-void lockInterruptibly()：如果当前线程未被中断，则获取锁定，如果已经被中断则出现异常
-
-ReentrantLock与synchonized区别
-ReentrantLock可以中断地获取锁（void lockInterruptibly() throws InterruptedException）
-ReentrantLock可以尝试非阻塞地获取锁（boolean tryLock()）
-ReentrantLock可以超时获取锁。通过tryLock(timeout, unit)，可以尝试获得锁，并且指定等待的时间。
-ReentrantLock可以实现公平锁。通过new ReentrantLock(true)实现。
-ReentrantLock对象可以同时绑定多个Condition对象，而在synchronized中，锁对象的的wait(), notify(), notifyAll()方法可以实现一个隐含条件，如果要和多于一个的条件关联的对象，就不得不额外地添加一个锁，而ReentrantLock则无需这样做，只需要多次调用newCondition()方法即可
 
 gc日志：-XX:PrintHeapAtGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCTimeStamp -Xloggc:$CATALINA_BASE/logs/gc.log
 

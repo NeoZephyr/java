@@ -1,0 +1,145 @@
+线程时独立的调度单位，操作系统会分配线程相关的资源，每个线程有单独的程序执行计数器和栈
+
+## 线程的优势
+1. 充分利用多 CPU 的计算能力、硬件资源、网络等
+2. 防止阻塞，在用户界面应用程序中，保持程序的响应性
+3. 便于建模
+
+
+## 线程的劣势
+1. 创建线程需要消耗操作系统的资源
+2. 线程调度和切换消耗操作系统的资源
+3. 若执行任务都是 CPU 密集型的，创建超过 CPU 数量的线程并不会加快程序的执行
+
+
+## 守护线程
+当整个程序中剩下的都是守护线程的时，程序就会退出
+
+thread.setDaemon(true) 必须在 thread.start() 之前设置，否则会报 `IllegalThreadStateException` 异常
+
+在 Daemon 线程中产生的新线程也是 Daemon 的
+
+
+## join
+调用 join 的线程等待该线程结束，在等待线程结束的过程中，这个等待可能被中断，若被中断会抛出 `InterruptedException` 异常
+
+
+## yield
+yield 方法的作用是放弃当前的 CPU 资源，将它让给其他的任务去占用 CPU 执行时间。但放弃时间不确定，有可能刚放弃，马上又获得 CPU 时间片。yield 方法和 sleep 方法一样，线程并不会让出锁，和 wait 不同
+
+
+## 中断
+中断并不强迫终止一个线程，而是作为一种协作机制给线程传递一个取消信号，由线程处理
+
+1. 若线程在运行中，且没有执行 IO 操作，interrupt 只会设置线程的中断标志位，线程在运行过程中选择合适的位置检查中断标志位
+2. 在这些 waiting/timed_waiting 状态时，对线程对象调用 interrupt 会使得该线程抛出 `InterruptedException` 异常，异常抛出后，中断标志位会被清空
+3. 若线程在等待锁，对线程对象调用 interrupt 只会设置线程的中断标志位，线程依然处于 BLOCKED 状态
+4. 若线程尚未启动或者已经结束，则调用 interrupt 没有任何效果，中断标志位也不会被设置
+
+InputStream 的 read 调用是不可中断的，若流中没有数据，read 会阻塞，此时线程状态依然是 RUNNABLE，interrupt 调用只会设置线程中断标志而不响应
+
+
+## 生命周期
+### 初始状态
+线程已创建，但还不允许分配 CPU 执行。不过这里所谓的被创建，仅仅是在编程语言层面被创建，而在操作系统层面，真正的线程还没有创建
+
+### 可运行状态
+线程可以分配 CPU 执行。在这种状态下，真正的操作系统线程已经被成功创建了，所以可以分配 CPU 执行
+
+### 运行状态
+当有空闲的 CPU 时，操作系统会将其分配给一个处于可运行状态的线程，被分配到 CPU 的线程的状态就转换成了运行状态
+
+### 休眠状态
+运行状态的线程如果调用一个阻塞的 API 或者等待某个事件，那么线程的状态就会转换到休眠状态，同时释放 CPU 使用权
+
+休眠状态的线程永远没有机会获得 CPU 使用权，只有当等待的事件出现了，线程就会从休眠状态转换到可运行状态
+
+### 终止状态
+线程执行完或者出现异常就会进入终止状态，终止状态的线程不会切换到其他任何状态，进入终止状态也就意味着线程的生命周期结束了
+
+
+## java 线程状态
+java 线程中的 BLOCKED、WAITING、TIMED_WAITING 是一种状态，即休眠状态
+
+1. NEW: 初始化状态
+2. RUNNABLE: 可运行 / 运行状态
+3. BLOCKED: 阻塞状态
+4. WAITING: 无时限等待
+5. TIMED_WAITING: 有时限等待
+6. TERMINATED: 终止状态
+
+### RUNNABLE 与 BLOCKED 的转换
+只有一种场景会触发这种转换，就是线程等待 synchronized 的隐式锁。当等待的线程获得 synchronized 隐式锁时，又会从 BLOCKED 转换到 RUNNABLE 状态
+
+线程调用阻塞式 API 时，在操作系统层面，线程是会转换到休眠状态的，但是在 JVM 层面，java 线程的状态不会发生变化，依然保持 RUNNABLE 状态
+
+在 JVM 看来，等待 CPU 使用权（操作系统层面此时处于可执行状态）与等待 I/O（操作系统层面此时处于休眠状态）没有区别，都是在等待某个资源，所以都归入了 RUNNABLE 状态
+
+### RUNNABLE 与 WAITING 的转换
+总体来说，有三种场景会触发这种转换
+
+1. 获得 synchronized 隐式锁的线程，调用无参数的 Object.wait() 方法
+2. 调用无参数的 Thread.join() 方法。例如有一个线程对象 thread A，当调用 A.join() 的时候，执行这条语句的线程会等待 thread A 执行完，而等待中的这个线程，其状态会从 RUNNABLE 转换到 WAITING。当线程 thread A 执行完，原来等待它的线程又会从 WAITING 状态转换到 RUNNABLE
+3. 调用 LockSupport.park() 方法。java 并发包中的锁，都是基于 LockSupport 实现的。调用 LockSupport.park() 方法，当前线程会阻塞，线程的状态会从 RUNNABLE 转换到 WAITING。调用 LockSupport.unpark(Thread thread) 可唤醒目标线程，目标线程的状态又会从 WAITING 状态转换到 RUNNABLE
+
+### RUNNABLE 与 TIMED_WAITING 的转换
+有五种场景会触发这种转换
+
+1. 调用带超时参数的 Thread.sleep(long millis) 方法
+2. 获得 synchronized 隐式锁的线程，调用带超时参数的 Object.wait(long timeout) 方法
+3. 调用带超时参数的 Thread.join(long millis) 方法
+4. 调用带超时参数的 LockSupport.parkNanos(Object blocker, long deadline) 方法
+5. 调用带超时参数的 LockSupport.parkUntil(long deadline) 方法
+
+### 从 NEW 到 RUNNABLE 状态
+java 刚创建出来的 Thread 对象就是 NEW 状态。NEW 状态的线程，不会被操作系统调度，因此不会执行。java 线程要执行，就必须转换到 RUNNABLE 状态，即调用线程对象的 start() 方法
+
+### 从 RUNNABLE 到 TERMINATED 状态
+线程执行完 run() 方法后，会自动转换到 TERMINATED 状态，如果执行 run() 方法的时候异常抛出，也会导致线程终止。有时需要强制中断 run() 方法的执行，可以调用 stop() 或者 interrupt() 方法
+
+stop() 方法会杀死线程，不给线程喘息的机会，如果线程持有 ReentrantLock 锁，被 stop() 的线程并不会自动调用 ReentrantLock 的 unlock() 去释放锁，那其他线程就再也没机会获得 ReentrantLock 锁。类似的方法还有 suspend() 和 resume() 方法，这几个方法都不建议使用
+
+interrupt() 方法仅仅是通知线程，线程有机会执行一些后续操作，同时也可以无视这个通知。被 interrupt 的线程，可以通过异常或者主动检测得知。
+
+当线程 A 处于 WAITING、TIMED_WAITING 状态时，如果其他线程调用线程 A 的 interrupt() 方法，会使线程 A 返回到 RUNNABLE 状态，同时线程 A 的代码会触发 InterruptedException 异常
+
+当线程 A 处于 RUNNABLE 状态时，并且阻塞在 java.nio.channels.InterruptibleChannel 上时，如果其他线程调用线程 A 的 interrupt() 方法，线程 A 会触发 java.nio.channels.ClosedByInterruptException 这个异常；而阻塞在 java.nio.channels.Selector 上时，如果其他线程调用线程 A 的 interrupt() 方法，线程 A 的 java.nio.channels.Selector 会立即返回
+
+如果线程处于 RUNNABLE 状态，并且没有阻塞在某个 I/O 操作上，这时就得依赖线程 A 主动检测中断状态了。如果其他线程调用线程 A 的 interrupt() 方法，那么线程 A 可以通过 isInterrupted() 方法，检测是不是自己被中断了
+
+```java
+Thread thread = Thread.currentThread();
+
+while (true) {
+    if (thread.isInterrupted()) {
+        break;
+    }
+
+    try {
+        Thread.sleep(100);
+    } catch (InterruptedException e) {
+        e.printStackTrace();
+
+        // thread.interrupt();
+    }
+}
+```
+捕获 InterruptedException 之后，中断标示会自动清除掉，表示可以接收下一个中断信号了。所以应该重置一下中断标识
+
+
+## 线程数
+### CPU 密集型
+理论上线程的数量设置为 CPU 核数就是最合适的。不过在工程上，线程的数量一般会设置为 CPU 核数 + 1，这样的话，当线程因为偶尔的内存页失效或其他原因导致阻塞时，这个额外的线程可以顶上，从而保证 CPU 的利用率
+
+### I/O 密集型
+最佳线程数 = CPU 核数 * (1 + (I/O 耗时 / CPU 耗时))
+
+
+## 线程安全
+### 局部变量
+每个方法在调用栈里都有自己的独立空间，称为栈帧。当调用方法时，会创建新的栈帧，并压入调用栈；当方法返回时，对应的栈帧就会被自动弹出。每个栈帧里都有对应方法需要的参数、返回地址以及局部变量。由于每个线程都有自己独立的调用栈，这样多个线程可以同时用不同的参数调用相同的方法，而不会相互干扰
+
+### 线程封闭
+仅在单线程内访问数据，不存在共享，即便不同步也不会有并发问题
+
+
