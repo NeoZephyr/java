@@ -74,6 +74,46 @@ DiscardOldestPolicy：丢弃最老的任务，其实就是把最早进入工作�
 1. 强烈建议使用有界队列
 2. 默认拒绝策略要慎重使用
 3. 捕获所有异常并按需处理
+4. 为不同的任务创建不同的线程池，相同线程池中的任务相互独立
+
+```java
+BlockingQueue<Task> queue = LinkedBlockingQueue<>(2000);
+
+void start() {
+    ExecutorService executor = executors.newFixedThreadPool(5);
+
+    for (int i = 0; i < 5; ++i) {
+        executor.execute(() -> {
+            try {
+                while (true) {
+                    List<Task> tasks = pollTasks();
+                    execTasks(tasks);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+    }
+}
+
+List<Task> pollTasks() throws InterruptedException {
+    List<Task> tasks = new LinkedList<>();
+
+    // 阻塞获取
+    Task task = queue.take();
+
+    while (task != null) {
+        tasks.add(task);
+
+        // 非阻塞获取
+        task = queue.poll();
+    }
+
+    return tasks;
+}
+
+void execTasks(List<Task> tasks) {}
+```
 
 
 ## Runnable vs Callable

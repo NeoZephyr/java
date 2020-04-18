@@ -126,6 +126,15 @@ while (true) {
 ```
 捕获 InterruptedException 之后，中断标示会自动清除掉，表示可以接收下一个中断信号了。所以应该重置一下中断标识
 
+另外，我们很可能在线程的 run() 方法中调用第三方类库提供的方法，而第三方类库可能没有正确处理了线程的中断异常，那么就会导致线程不能够正常终止。所以强烈建议设置线程终止标志位
+```java
+volatile boolean terminated = false;
+
+while (!terminated) {
+    // TODO
+}
+```
+
 
 ## 线程数
 ### CPU 密集型
