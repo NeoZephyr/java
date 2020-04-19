@@ -120,3 +120,73 @@ class RegTest {
 ## StringBuffer vs StringBuilder
 StringBuffer: 线程安全，适用多线程下在字符缓冲区进行大量操作的情况
 StringBuilder: 线程不安全，适用于单线程下在字符缓冲区进行大量操作的情况
+
+
+## 正则
+### 贪婪模式
+在数量匹配中，如果单独使用 +、?、* 或 {min,max} 等量词，正则表达式会匹配尽可能多的内容
+
+```java
+String text = "abbc";
+String regex = "ab{1,3}c"
+```
+贪婪模式下，匹配 3 个 b 字符。匹配发生了一次失败，就引起了一次回溯
+
+### 懒惰模式
+正则表达式会尽可能少地重复匹配字符。如果匹配成功，它会继续匹配剩余的字符串
+
+```java
+String text = "abbc";
+String regex = "ab{1,3}?c"
+```
+选择最小的匹配范围，只匹配 1 个 b 字符，避免了回溯问题
+
+### 独占模式
+独占模式一样会最大限度地匹配更多内容，不同的是，在独占模式下，匹配失败就会结束匹配，不会发生回溯问题
+```java
+String text = "abbc";
+String regex = "ab{1,3}+bc"
+```
+结果是不匹配，结束匹配，不会发生回溯问题
+
+
+正则表达式的优化
+少用贪婪模式，多用独占模式
+减少分支选择。如果要用，可以通过以下几种方式来优化：
+1. 将比较常用的选择项放在前面，使它们可以较快地被匹配
+2. 尝试提取共用模式，例如，将 "(abcd|abef)" 替换为 "ab(cd|ef)"
+
+减少捕获嵌套
+捕获组是指把正则表达式中，子表达式匹配的内容保存到以数字编号或显式命名的数组中，方便后面引用。一般一个 () 就是一个捕获组，捕获组可以进行嵌套
+
+非捕获组则是指参与匹配却不进行分组编号的捕获组，其表达式一般由 (?:exp) 组成
+
+在正则表达式中，每个捕获组都有一个编号，编号 0 代表整个匹配到的内容
+
+```java
+String text = "<input high=\"20\" weight=\"70\">test</input>";
+String reg="(<input.*?>)(.*?)(</input>)";
+Pattern pattern = Pattern.compile(reg);
+Matcher matcher = pattern.matcher(text);
+
+while (matcher.find()) {
+    System.out.println(matcher.group(0));
+    System.out.println(matcher.group(1));
+    System.out.println(matcher.group(2));
+    System.out.println(matcher.groupCount());
+}
+```
+
+如果不需要获取某一个分组内的文本，那么就使用非捕获分组。减少不需要获取的分组，可以提高正则表达式的性能
+```java
+String text = "<input high=\"20\" weight=\"70\">test</input>";
+String reg="(?:<input.*?>)(.*?)(?:</input>)";
+Pattern pattern = Pattern.compile(reg);
+Matcher matcher = pattern.matcher(text);
+
+while (matcher.find()) {
+    System.out.println(matcher.group(0));
+    System.out.println(matcher.group(1));
+    System.out.println(matcher.groupCount());
+}
+```
