@@ -1,191 +1,40 @@
 ## Map
-`Map` 接口表示键值对集合，根据键进行操作，它有两个主要的实现类，`HashMap` 和 `TreeMap`
+Map 接口表示键值对集合，根据键进行操作，它有两个主要的实现类，HashMap 和 TreeMap
+
 
 ## HashMap
-`HashMap` 基于哈希表实现，要求键重写 `hashCode` 方法，操作效率很高，但元素没有顺序
+HashMap 基于哈希表实现，要求键重写 hashCode 方法，操作效率很高，但元素没有顺序
+
+HashMap 是 Node 数组构成，每个 Node 包含了一个 key-value 键值对
 ```java
-public class HashMap<K,V> extends AbstractMap<K,V>
-    implements Map<K,V>, Cloneable, Serializable {
+transient Node<K,V>[] table;
 
-  private static final long serialVersionUID = 362498820763181265L;
-  static final int DEFAULT_INITIAL_CAPACITY = 1 << 4; // aka 16
-  static final int MAXIMUM_CAPACITY = 1 << 30;
-  static final float DEFAULT_LOAD_FACTOR = 0.75f;
-  
-  // 判断是否需要将链表转换为红黑树的阈值
-  static final int TREEIFY_THRESHOLD = 8;
-  static final int UNTREEIFY_THRESHOLD = 6;
-  static final int MIN_TREEIFY_CAPACITY = 64;
-
-  static class Node<K,V> implements Map.Entry<K,V> {
+static class Node<K,V> implements Map.Entry<K,V> {
     final int hash;
     final K key;
     V value;
-    
-    // 用于实现链表结构
     Node<K,V> next;
-
-    Node(int hash, K key, V value, Node<K,V> next) {
-      this.hash = hash;
-      this.key = key;
-      this.value = value;
-      this.next = next;
-    }
-
-    public final K getKey()        { return key; }
-    public final V getValue()      { return value; }
-    public final String toString() { return key + "=" + value; }
-
-    public final int hashCode() {
-      return Objects.hashCode(key) ^ Objects.hashCode(value);
-    }
-
-    public final V setValue(V newValue) {
-      V oldValue = value;
-      value = newValue;
-      return oldValue;
-    }
-
-    public final boolean equals(Object o) {
-      if (o == this)
-        return true;
-      if (o instanceof Map.Entry) {
-        Map.Entry<?,?> e = (Map.Entry<?,?>)o;
-        if (Objects.equals(key, e.getKey()) &&
-            Objects.equals(value, e.getValue()))
-          return true;
-      }
-      return false;
-    }
-  }
-
-  static final int hash(Object key) {
-    int h;
-    return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
-  }
-
-  static Class<?> comparableClassFor(Object x) {
-    if (x instanceof Comparable) {
-      Class<?> c; Type[] ts, as; Type t; ParameterizedType p;
-      if ((c = x.getClass()) == String.class) // bypass checks
-        return c;
-      if ((ts = c.getGenericInterfaces()) != null) {
-        for (int i = 0; i < ts.length; ++i) {
-          if (((t = ts[i]) instanceof ParameterizedType) &&
-              ((p = (ParameterizedType)t).getRawType() ==
-               Comparable.class) &&
-              (as = p.getActualTypeArguments()) != null &&
-              as.length == 1 && as[0] == c) // type arg is c
-            return c;
-        }
-      }
-    }
-    return null;
-  }
-
-  @SuppressWarnings({"rawtypes","unchecked"}) // for cast to Comparable
-  static int compareComparables(Class<?> kc, Object k, Object x) {
-    return (x == null || x.getClass() != kc ? 0 :
-            ((Comparable)k).compareTo(x));
-  }
-
-  static final int tableSizeFor(int cap) {
-    int n = cap - 1;
-    n |= n >>> 1;
-    n |= n >>> 2;
-    n |= n >>> 4;
-    n |= n >>> 8;
-    n |= n >>> 16;
-    return (n < 0) ? 1 : (n >= MAXIMUM_CAPACITY) ? MAXIMUM_CAPACITY : n + 1;
-  }
-
-  transient Node<K,V>[] table;
-  transient Set<Map.Entry<K,V>> entrySet;
-  transient int size;
-  transient int modCount;
-  int threshold;
-  final float loadFactor;
 }
 ```
 
-### 构造 `HashMap`
-`HashMap` 安装 lazy-load 原则，在非拷贝构造函数中只是进行初始值设定，节点数组在首次使用时才进行初始化
-```java
-public HashMap(int initialCapacity, float loadFactor) {
-    if (initialCapacity < 0)
-    throw new IllegalArgumentException("Illegal initial capacity: " +
-                                       initialCapacity);
-    if (initialCapacity > MAXIMUM_CAPACITY)
-        initialCapacity = MAXIMUM_CAPACITY;
-    if (loadFactor <= 0 || Float.isNaN(loadFactor))
-        throw new IllegalArgumentException("Illegal load factor: " +
-                                           loadFactor);
-    this.loadFactor = loadFactor;
-    this.threshold = tableSizeFor(initialCapacity);
-}
+HashMap 有两个重要的属性：加载因子（loadFactor）和边界值（threshold）
 
-public HashMap(int initialCapacity) {
-    this(initialCapacity, DEFAULT_LOAD_FACTOR);
-}
+加载因子用来间接设置 Entry 数组的内存空间大小，在初始 HashMap 不设置参数的情况下，默认加载因子为 0.75
 
-public HashMap() {
-    this.loadFactor = DEFAULT_LOAD_FACTOR; // all other fields defaulted
-}
+加载因子越大，对空间的利用就越充分，这就意味着链表的长度越长，查找效率也就越低；加载因子太小，那么哈希表的数据将过于稀疏，对空间造成严重浪费
 
-public HashMap(Map<? extends K, ? extends V> m) {
-    this.loadFactor = DEFAULT_LOAD_FACTOR;
-    putMapEntries(m, false);
-}
-```
+边界值通过初始容量和加载因子计算所得。如果 HashMap 中 Node 的数量超过边界值，HashMap 就会调用 resize() 方法重新分配 table 数组。这将会导致 HashMap 的数组复制，迁移到另一块内存中去，从而影响 HashMap 的效率
 
-### Map
-`keySet()`/`values()`/`entrySet()` 方法返回的都是视图，基于这些返回值的修改会直接修改 Map 自身
-```java
-public interface Map<K,V> {
-  int size();
-  boolean isEmpty();
-  boolean containsKey(Object key);
-  boolean containsValue(Object value);
-  V get(Object key);
-  V put(K key, V value);
-  V remove(Object key);
 
-  void putAll(Map<? extends K, ? extends V> m);
-
-  void clear();
-  Set<K> keySet();
-  Collection<V> values();
-  Set<Map.Entry<K, V>> entrySet();
-  
-  interface Entry<K,V> {
-    K getKey();
-    V getValue();
-    V setValue(V value);
-    boolean equals(Object o);
-    int hashCode();
-  }
-
-  boolean equals(Object o);
-  int hashCode();
-}
-```
-
-### 内部实现
-`table` 是一个 `Node` 类型数组，其中每个元素指向一个单链表；根据键存取值，通过键计算出 hash 值，取模得到数组中的索引位置 `idx`，然后操作 `table[idx]` 指向的单向链表；存取时依据键的 `hash` 值，这需要相同对象的 `hashCode()` 返回值相同
-
-#### 保存键值对
-```java
-public V put(K key, V value) {
-  return putVal(hash(key), key, value, false, true);
-}
-```
-有些 `key` 的哈希值差异主要在高位，而 `HashMap` 里的哈希寻址是忽略容量以上的高位的，以下移位处理就可以有效避免哈希碰撞
+### 添加元素
+有些 key 的哈希值差异主要在高位，而 HashMap 里的哈希寻址是忽略容量以上的高位的，以下移位处理就可以有效避免哈希碰撞
 ```java
 static final int hash(Object key) {
     int h;
     return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
 }
 ```
+
 ```java
 final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
                    boolean evict) {
@@ -201,15 +50,15 @@ final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
     else {
         Node<K,V> e; K k;
         if (p.hash == hash &&
-            ((k = p.key) == key || (key != null && key.equals(k)))) // 找到 key
+            ((k = p.key) == key || (key != null && key.equals(k)))) // key 值相同
             e = p;
-        else if (p instanceof TreeNode)
-            e = ((TreeNode<K,V>)p).putTreeVal(this, tab, hash, key, value); //
+        else if (p instanceof TreeNode) // 新增节点为红黑树节点
+            e = ((TreeNode<K,V>)p).putTreeVal(this, tab, hash, key, value);
         else {
             for (int binCount = 0; ; ++binCount) {
-                if ((e = p.next) == null) { // 没有找到 key
+                if ((e = p.next) == null) 
                     p.next = newNode(hash, key, value, null);
-                    if (binCount >= TREEIFY_THRESHOLD - 1) // -1 for 1st
+                    if (binCount >= TREEIFY_THRESHOLD - 1) // 链表长度足够转换为红黑树
                         // 转换为树节点
                         treeifyBin(tab, hash);
                     break;
@@ -237,235 +86,36 @@ final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
     return null;
 }
 ```
-```java
-Node<K,V> newNode(int hash, K key, V value, Node<K,V> next) {
-    return new Node<>(hash, key, value, next);
-}
-```
-扩容
-```java
-final Node<K,V>[] resize() {
-    Node<K,V>[] oldTab = table;
-    int oldCap = (oldTab == null) ? 0 : oldTab.length;
-    int oldThr = threshold;
-    int newCap, newThr = 0;
-    
-    if (oldCap > 0) {
-        if (oldCap >= MAXIMUM_CAPACITY) {
-            threshold = Integer.MAX_VALUE;
-            return oldTab;
-        }
-        else if ((newCap = oldCap << 1) < MAXIMUM_CAPACITY &&
-                 oldCap >= DEFAULT_INITIAL_CAPACITY)
-            newThr = oldThr << 1; // double threshold
-    }
-    else if (oldThr > 0) // initial capacity was placed in threshold
-        newCap = oldThr;
-    else {               // zero initial threshold signifies using defaults
-        newCap = DEFAULT_INITIAL_CAPACITY;
-        newThr = (int)(DEFAULT_LOAD_FACTOR * DEFAULT_INITIAL_CAPACITY);
-    }
 
-    if (newThr == 0) {
-        float ft = (float)newCap * loadFactor;
-        newThr = (newCap < MAXIMUM_CAPACITY && ft < (float)MAXIMUM_CAPACITY ?
-                  (int)ft : Integer.MAX_VALUE);
-    }
-    threshold = newThr;
-    @SuppressWarnings({"rawtypes","unchecked"})
-        Node<K,V>[] newTab = (Node<K,V>[])new Node[newCap];
-    table = newTab;
-    if (oldTab != null) {
-        for (int j = 0; j < oldCap; ++j) {
-            Node<K,V> e;
-            if ((e = oldTab[j]) != null) {
-                oldTab[j] = null;
-                if (e.next == null)
-                    newTab[e.hash & (newCap - 1)] = e;
-                else if (e instanceof TreeNode)
-                    ((TreeNode<K,V>)e).split(this, newTab, j, oldCap);
-                else { // preserve order
-                    Node<K,V> loHead = null, loTail = null;
-                    Node<K,V> hiHead = null, hiTail = null;
-                    Node<K,V> next;
-                    do {
-                        next = e.next;
-                        if ((e.hash & oldCap) == 0) {
-                            if (loTail == null)
-                                loHead = e;
-                            else
-                                loTail.next = e;
-                            loTail = e;
-                        }
-                        else {
-                            if (hiTail == null)
-                                hiHead = e;
-                            else
-                                hiTail.next = e;
-                            hiTail = e;
-                        }
-                    } while ((e = next) != null);
-                    if (loTail != null) {
-                        loTail.next = null;
-                        newTab[j] = loHead;
-                    }
-                    if (hiTail != null) {
-                        hiTail.next = null;
-                        newTab[j + oldCap] = hiHead;
-                    }
-                }
-            }
-        }
-    }
-    return newTab;
-}
-```
-```java
-final void treeifyBin(Node<K,V>[] tab, int hash) {
-    int n, index; Node<K,V> e;
-    if (tab == null || (n = tab.length) < MIN_TREEIFY_CAPACITY)
-        resize();
-    else if ((e = tab[index = (n - 1) & hash]) != null) {
-        TreeNode<K,V> hd = null, tl = null;
-        do {
-            TreeNode<K,V> p = replacementTreeNode(e, null);
-            if (tl == null)
-                hd = p;
-            else {
-                p.prev = tl;
-                tl.next = p;
-            }
-            tl = p;
-        } while ((e = e.next) != null);
-        if ((tab[index] = hd) != null)
-        hd.treeify(tab);
-    }
-}
-```
+### 获取元素
+当 HashMap 中只存在数组，而数组中没有 Node 链表时，查询数据性能最好。一旦发生大量的哈希冲突，就会产生 Node 链表，这个时候每次查询元素都可能遍历 Node 链表，从而降低查询数据的性能。可以通过红黑树，使查询的平均复杂度降低到了 O(log(n))
 
-#### 获取元素
-```java
-public V get(Object key) {
-    Node<K,V> e;
-    return (e = getNode(hash(key), key)) == null ? null : e.value;
-}
-```
-```java
-final Node<K,V> getNode(int hash, Object key) {
-    Node<K,V>[] tab; Node<K,V> first, e; int n; K k;
-    
-    // 定位
-    if ((tab = table) != null && (n = tab.length) > 0 &&
-        (first = tab[(n - 1) & hash]) != null) {
-        if (first.hash == hash && // always check first node
-            ((k = first.key) == key || (key != null && key.equals(k))))
-            return first;
-        if ((e = first.next) != null) {
-            // 红黑树查找，复制度 O(logn)
-            if (first instanceof TreeNode)
-                return ((TreeNode<K,V>)first).getTreeNode(hash, key);
-            do {
-                if (e.hash == hash &&
-                    ((k = e.key) == key || (key != null && key.equals(k))))
-                    return e;
-            } while ((e = e.next) != null);
-        }
-    }
-    return null;
-}
-```
+### 扩容
+在 JDK1.7 中，HashMap 整个扩容过程就是分别取出数组元素，一般该元素是最后一个放入链表中的元素，然后遍历以该元素为头的单向链表元素，依据每个被遍历元素的 hash 值计算其在新数组中的下标，然后进行交换。这样的扩容方式会将原来哈希冲突的单向链表尾部变成扩容后单向链表的头部
 
-#### 是否包含键
-```java
-public boolean containsKey(Object key) {
-    return getNode(hash(key), key) != null;
-}
-```
+在 JDK 1.8 中，HashMap 对扩容操作做了优化。由于扩容数组的长度是 2 倍关系，所以对于假设初始 tableSize = 4 要扩容到 8 来说就是 0100 到 1000 的变化，在扩容中只用判断原来的 hash 值和左移动的一位按位与操作是 0 或 1 就行，0 的话索引不变，1 的话索引变成原索引加上扩容前数组
 
-#### 是否包含值
-```java
-public boolean containsValue(Object value) {
-    Node<K,V>[] tab; V v;
-    if ((tab = table) != null && size > 0) {
-        for (int i = 0; i < tab.length; ++i) {
-            for (Node<K,V> e = tab[i]; e != null; e = e.next) {
-                if ((v = e.value) == value ||
-                    (value != null && value.equals(v)))
-                return true;
-            }
-        }
-    }
-    return false;
-}
-```
+初始容量，一般得是 2 的整数次幂：
+2 的幂次方减 1 后每一位都是 1，这样数组的每一个位置都能添加到元素。如果有一个位置为 0，那么无论 hash 值是多少，那一位总是 0，不利于均匀分布元素
 
-#### 删除键值对
-```java
-public V remove(Object key) {
-    Node<K,V> e;
-    return (e = removeNode(hash(key), key, null, false, true)) == null ?
-        null : e.value;
-}
-```
-```java
-final Node<K,V> removeNode(int hash, Object key, Object value,
-                               boolean matchValue, boolean movable) {
-  Node<K,V>[] tab; Node<K,V> p; int n, index;
-  if ((tab = table) != null && (n = tab.length) > 0 &&
-      (p = tab[index = (n - 1) & hash]) != null) {
-    Node<K,V> node = null, e; K k; V v;
-    if (p.hash == hash &&
-        ((k = p.key) == key || (key != null && key.equals(k))))
-      node = p;
-    else if ((e = p.next) != null) {
-      if (p instanceof TreeNode)
-        node = ((TreeNode<K,V>)p).getTreeNode(hash, key);
-      else {
-        do {
-          if (e.hash == hash &&
-              ((k = e.key) == key ||
-               (key != null && key.equals(k)))) {
-            node = e;
-            break;
-          }
-          p = e;
-        } while ((e = e.next) != null);
-      }
-    }
-    if (node != null && (!matchValue || (v = node.value) == value ||
-                         (value != null && value.equals(v)))) {
-      if (node instanceof TreeNode)
-        ((TreeNode<K,V>)node).removeTreeNode(this, tab, movable);
-      else if (node == p)
-        tab[index] = node.next;
-      else
-        p.next = node.next;
-      ++modCount;
-      --size;
-      afterNodeRemoval(node);
-      return node;
-    }
-  }
-  return null;
-}
-```
-
-#### 遍历
+### 遍历
 ```java
 // 遍历时将 key, value 同时取出
 Iterator<Map.Entry<String, Integer>> entryIterator = map.entrySet().iterator();
+
 while (entryIterator.hasNext()) {
     Map.Entry<String, Integer> next = entryIterator.next();
-    System.out.println("key=" + next.getKey() + " value=" + next.getValue());
+    System.out.println("key = " + next.getKey() + " value = " + next.getValue());
 }
 
 // 需要通过 key 再一次取出 value，效率较低
 Iterator<String> iterator = map.keySet().iterator();
 while (iterator.hasNext()) {
     String key = iterator.next();
-    System.out.println("key=" + key + " value=" + map.get(key));
+    System.out.println("key = " + key + " value = " + map.get(key));
 }
 ```
+
 
 ## TreeMap
 `TreeMap` 基于排序二叉树实现，要求键实现 `Comparable` 接口，或提供一个 `Comparator` 对象，操作效率稍低，但可以按键有序

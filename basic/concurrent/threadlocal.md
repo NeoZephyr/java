@@ -1,5 +1,4 @@
 ## 工作原理
-
 ThreadLocal 仅仅是一个代理工具类，内部并不持有任何与线程相关的数据，所有和线程相关的数据都存储在 Thread 里面
 ```java
 public class Thread implements Runnable {

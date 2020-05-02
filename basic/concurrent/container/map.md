@@ -9,6 +9,14 @@ ConcurrentHashMap 所提供的迭代器不会抛出 `ConcurrentModificationExcep
 1. 对于一些复合操作，使用同步容器时，调用方必须加锁，而 ConcurrentMap 能保证原子操作
 2. ConcurrentHashMap 在迭代时不需要加锁，若另一个线程对容器进行了修改，迭代会继续，不会抛出 `ConcurrentModificationException` 异常
 
+```java
+ConcurrentMap<String, LongAdder> freqs = new ConcurrentMap<>();
+
+// 1. 原子性方法 computeIfAbsent 来做复合逻辑操作
+// 2. 方法返回的 Value 是一个线程安全的累加器，可以直接调用其 increment 方法进行累加
+freqs.computeIfAbsent(key, k -> new LongAdder()).increment();
+```
+
 
 ## ConcurrentSkipListMap
 1. ConcurrentSkipListMap 基于 SkipList 实现，SkipList 称为跳跃表或跳表，采用跳表而不是树是因为跳表更易于实现高效并发算法
