@@ -28,6 +28,9 @@ invokeAny 只需要有一个任务在限时内完成就会返回该任务的结�
 ### newFixedThreadPool
 创建一个固定线程大小的线程池
 
+### newScheduledThreadPool
+定时线程池，支持定时及周期性任务执行
+
 ### newSingleThreadExecutor
 创建一个单线程的执行器，适用于需要确保所有任务被顺序执行的场合
 
@@ -48,6 +51,13 @@ ThreadPoolExecutor(
 表示线程池保有的最小线程数。当有新任务到来时，若当前线程个数小于 corePoolSize，则创建一个新线程来执行该任务，即使此时其他线程是空闲的；若当前线程个数大于等于 corePoolSize 则不会立即创建新线程，而是先尝试排队，若队列满或其他原因不能立即入队则不排队，进一步检查线程个数是否达到 maximumPoolSize，若没有则继续创建线程，直到线程数达到 maximumPoolSize
 
 默认情况下，核心工作线程在初始的创建，新任务到来时才被启动。可以通过调用 prestartCoreThread 或 prestartAllCoreThreads 方法改变这种行为，通常会在应用启动时 WarmUp 核心线程，从而达到任务过来能够立马执行的结果
+
+如果是 CPU 密集型任务，主要是消耗 CPU 资源，可以将线程数设置为 N（CPU 核心数）+ 1
+如果是 I/O 密集型任务：系统会用大部分的时间来处理 I/O 交互，而不会占用 CPU 来处理，这时就可以将 CPU 交出给其它线程使用。因此在 I/O 密集型任务的应用中，可以将线程数设置为 2N
+
+通用计算：
+线程数 = N（CPU 核数）*（1 + WT（线程等待时间）/ ST（线程时间运行时间））
+可以通过 JDK 自带的工具 VisualVM 来查看 WT/ST 比例
 
 ### maximumPoolSize
 表示线程池创建的最大线程数

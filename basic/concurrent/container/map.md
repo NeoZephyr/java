@@ -7,7 +7,7 @@ ConcurrentHashMap 所提供的迭代器不会抛出 `ConcurrentModificationExcep
 
 ### 对比同步容器
 1. 对于一些复合操作，使用同步容器时，调用方必须加锁，而 ConcurrentMap 能保证原子操作
-2. ConcurrentHashMap 在迭代时不需要加锁，若另一个线程对容器进行了修改，迭代会继续，不会抛出 `ConcurrentModificationException` 异常
+2. ConcurrentHashMap 在迭代时不需要加锁，若另一个线程对容器进行了修改，迭代会继续，不会抛出 ConcurrentModificationException 异常
 
 ```java
 ConcurrentMap<String, LongAdder> freqs = new ConcurrentMap<>();
@@ -16,6 +16,8 @@ ConcurrentMap<String, LongAdder> freqs = new ConcurrentMap<>();
 // 2. 方法返回的 Value 是一个线程安全的累加器，可以直接调用其 increment 方法进行累加
 freqs.computeIfAbsent(key, k -> new LongAdder()).increment();
 ```
+
+ConcurrentHashMap 中的 get、size 等方法没有用到锁，有可能会导致某次读无法马上获取到写入的数据
 
 
 ## ConcurrentSkipListMap
@@ -29,6 +31,11 @@ ConcurrentSkipListMap 没有使用锁，所有操作都是无阻塞的，所有�
 
 ### 弱一致性
 迭代可能反映最新修改也可能不反映，一些方法如 `putAll`、`clear` 不是原子操作
+
+### ConcurrentSkipListMap vs ConcurrentHashMap
+ConcurrentHashMap 容器在数据量比较大的时候，链表会转换为红黑树。红黑树在并发情况下，删除和插入过程中有个平衡的过程，会牵涉到大量节点，因此竞争锁资源的代价相对比较高。
+
+而跳跃表的操作针对局部，需要锁住的节点少，因此在并发场景下的性能会更好一些。
 
 
 ## SkipList
