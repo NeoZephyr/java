@@ -1,43 +1,4 @@
-### 基础数据类型
-#### 类型转换
-`byte` , `short` , `char` 不同或者相同类型运算都会转换为 `int` 类型
-转换方向: `byte` -> `short` -> `int` -> `long` -> `float` -> `double`
-
-#### 二进制表示
-```java
-Integer.toBinaryString(a);
-Integer.toHexString(a);
-Integer.toBinaryString(Float.floatToInBits(a));
-```
-
-#### byte 陷阱
-```java
-byte a = 1;
-byte b1 = 1;
-byte b2 = 4;
-
-// ok: 没有超过 byte 范围
-a = 1 + 4;
-
-// fail: 可能超过 byte 范围
-a = a + 4;
-// fail: 可能超过 byte 范围
-a = b1 + b2;
-```
-
-#### long
-```java
-long a = 1234L;
-```
-
-#### float
-```java
-float f = 3.14f;
-```
-
-### 包装类
-
-#### 装箱与拆箱
+## 装箱与拆箱
 ```java
 boolean b = false;
 Boolean bo = Boolean.valueOf(b);
@@ -81,7 +42,8 @@ for (int i = 0; i < 100000; ++i) {
 ```
 自动拆箱与装箱发生在编译阶段，所以不同的写法生成的字节码是一致的。javac 自动把装箱转换为 `Integer.valueOf()`，把拆箱替换为 `Integer.intValue()`
 
-#### 字符串与包装类
+
+## 字符串与包装类
 ```java
 Boolean b = Boolean.valueOf("true");
 Float f = Float.valueOf("3.14f");
@@ -96,15 +58,6 @@ System.out.println(Boolean.toString(true));
 System.out.println(Float.toString(3.14f));
 ```
 
-#### Number
-```java
-byte byteValue();
-short shortValue();
-int intValue();
-long longValue();
-float floatValue();
-double doubleValue();
-```
 
 ### Integer
 ```java
@@ -121,7 +74,7 @@ public final class Integer extends Number implements Comparable<Integer> {\
 }
 ```
 
-#### 构建 Integer
+### 构建 Integer
 ```java
 public Integer(int value) {
     this.value = value;
@@ -132,7 +85,7 @@ public Integer(String s) throws NumberFormatException {
 }
 ```
 
-#### 解析字符串
+### 解析字符串
 ```java
 public static int parseInt(String s) throws NumberFormatException {
     return parseInt(s,10);
@@ -143,7 +96,7 @@ public static Integer valueOf(String s) throws NumberFormatException {
 }
 ```
 
-#### 装箱
+### 装箱
 ```java
 public static Integer valueOf(int i) {
     if (i >= IntegerCache.low && i <= IntegerCache.high)
@@ -152,14 +105,14 @@ public static Integer valueOf(int i) {
 }
 ```
 
-#### 拆箱
+### 拆箱
 ```java
 public int intValue() {
     return value;
 }
 ```
 
-#### 位运算
+### 位运算
 ```java
 public static int highestOneBit(int i) {
     // HD, Figure 3-1
@@ -217,7 +170,7 @@ public static int rotateRight(int i, int distance) {
 }
 ```
 
-#### IntegerCache
+### IntegerCache
 缓存上限值实际是可以根据需要调整的，JVM 提供了参数设置：`-XX:AutoBoxCacheMax=N`
 ```java
 public static Integer valueOf(int i) {
