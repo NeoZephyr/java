@@ -153,3 +153,75 @@ public double actionPrice(double price, Customer customer) {
     return this.actionPrice(price, (VIP) customer);
 }
 ```
+
+
+## 虚方法调用
+Java 里所有非私有实例方法调用都会被编译成 invokevirtual 指令，而接口方法调用都会被编译成 invokeinterface 指令。这两种指令，均属于 Java 虚拟机中的虚方法调用
+
+在绝大多数情况下，Java 虚拟机需要根据调用者的动态类型，来确定虚方法调用的目标方法。这个过程就是动态绑定。相对于静态绑定的非虚方法调用来说，虚方法调用更加耗时
+
+在 Java 虚拟机中，静态绑定包括用于调用静态方法的 invokestatic 指令，和用于调用构造器、私有实例方法以及超类非私有实例方法的 invokespecial 指令。如果虚方法调用指向一个标记为 final 的方法，那么 Java 虚拟机也可以静态绑定该虚方法调用的目标方法
+
+
+## 方法表
+Java 虚拟机中为每个类生成一张方法表，用以快速定位目标方法。类加载机制的链接部分中的准备阶段，除了为静态字段分配内存之外，还会构造与该类相关联的方法表
+
+方法表本质上是一个数组，每个数组元素指向一个当前类及其祖先类中非私有的实例方法。这些方法可能是具体的、可执行的方法，也可能是没有相应字节码的抽象方法
+
+方法表满足两个特质：
+1. 子类方法表中包含父类方法表中的所有方法
+2. 子类方法在方法表中的索引值，与它所重写的父类方法的索引值相同
+
+方法调用指令中的符号引用会在执行之前解析成实际引用。对于静态绑定的方法调用而言，实际引用将指向具体的目标方法。对于动态绑定的方法调用而言，实际引用则是方法表的索引值（实际上并不仅是索引值）
+
+在执行过程中，Java 虚拟机将获取调用者的实际类型，并在该实际类型的虚方法表中，根据索引值获得目标方法。这个过程便是动态绑定
+
+
+## 内联缓存
+内联缓存是一种加快动态绑定的优化技术。它能够缓存虚方法调用中调用者的动态类型，以及该类型所对应的目标方法。在之后的执行过程中，如果碰到已缓存的类型，内联缓存便会直接调用该类型所对应的目标方法。如果没有碰到已缓存的类型，内联缓存则会退化至使用基于方法表的动态绑定
+
+单态（monomorphic）指的是仅有一种状态的情况
+多态（polymorphic）指的是有限数量种状态的情况。二态（bimorphic）是多态的其中一种
+超多态（megamorphic）指的是更多种状态的情况。通常我们用一个具体数值来区分多态和超多态。在这个数值之下，我们称之为多态。否则，我们称之为超多态
+
+对于内联缓存来说，有对应的单态内联缓存、多态内联缓存和超多态内联缓存。单态内联缓存，便是只缓存了一种动态类型以及它所对应的目标方法。它的实现非常简单：比较所缓存的动态类型，如果命中，则直接调用对应的目标方法。多态内联缓存则缓存了多个动态类型及其目标方法。它需要逐个将所缓存的动态类型与当前动态类型进行比较，如果命中，则调用对应的目标方法。在实践中，大部分的虚方法调用均是单态的，也就是只有一种动态类型。为了节省内存空间，Java 虚拟机只采用单态内联缓存
+
+当内联缓存没有命中的情况下，Java 虚拟机需要重新使用方法表进行动态绑定。对于内联缓存中的内容：
+1. 替换单态内联缓存中的纪录。在最坏情况下，我们用两种不同类型的调用者，轮流执行该方法调用，那么每次进行方法调用都将替换内联缓存。也就是说，只有写缓存的额外开销，而没有用缓存的性能提升
+2. 劣化为超多态状态。这也是 Java 虚拟机的具体实现方式。处于这种状态下的内联缓存，实际上放弃了优化的机会。它将直接访问方法表，来动态绑定目标方法。与替换内联缓存纪录的做法相比，它牺牲了优化的机会，但是节省了写缓存的额外开销
+
+
+java -XX:CompileCommand='dontinline,*.passThroughImmigration' Passenger
+```java
+public class InlineTest {
+    public static void main(String[] args) {
+        Passenger a = new ChinesePassenger();
+        Passenger b = new ForeignerPassenger();
+        long current = System.currentTimeMillis();
+
+        for (int i = 1; i <= 2000000000; i++) {
+            if (i % 100000000 == 0) {
+                long temp = System.currentTimeMillis();
+                System.out.println(temp - current);
+                current = temp;
+            }
+            Passenger c = (i < 1000000000) ? a : b;
+            c.passThroughImmigration();
+        }
+    }
+}
+
+abstract class Passenger {
+    abstract void passThroughImmigration();
+}
+
+class ChinesePassenger extends Passenger {
+    @Override
+    void passThroughImmigration() {}
+}
+
+class ForeignerPassenger extends Passenger {
+    @Override
+    void passThroughImmigration() {}
+}
+```
