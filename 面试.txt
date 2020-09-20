@@ -1,65 +1,23 @@
-负责（）主题逻辑，用户体验，后台管理开发及优化
-完成 CVTE 接口接入，支持多类型，并完成后期（）接入
-管理员后台权限系统，对后台访问进行配置式 url 拦截，允许前端使用权限标签自动处理按钮或页面片段是否显示，完成后台权限层级树展示，管理员后台看到的菜单为分配的角色权限层级树的并集
+如果要实现 immutable 的类，我们需要做到：
+将 class 自身声明为 final，这样别人就不能扩展来绕过限制了
+将所有成员变量定义为 private 和 final，并且不要实现 setter 方法
+通常构造对象时，成员变量使用深度拷贝来初始化，而不是直接赋值，这是一种防御措施，因为你无法确定输入对象不被其他人修改
+如果确实需要实现 getter 方法，或者其他可能会返回内部状态的方法，使用 copy-on-write 原则，创建私有的 copy
 
-优化系统中 httpClient 同步和异步请求优化，可以通过开关控制请求使用的方式
-优化 redis 的使用，封装相关的接口及监控，方便他人使用和监控
-添加对 consumer 请求的 qps 监控，及流量控制（模拟 ratelimiter，使用令牌桶替代令牌窗口）
-通过 Mybatis 插件监控系统中的 sql，根据记录中的 sql 异常优化 sql
+JVM退出：JVM收到退出信号后，会调用注册的钩子，我们通过的注册的JVM退出钩子进行优雅关机
+阻止Daemon的线程在JVM退出被杀掉而导致消息丢失：如果Worker线程是Daemon线程，我们需要在JVM退出钩子中等待Worker线程完成当前手头处理的消息，再退出JVM。如果不是Daemon线程，即使JVM收到退出信号，也得等待Worker线程退出后再退出，不会丢掉正在处理的消息
+唤醒阻塞 Worker 线程并退出：中断线程以退出，在异常处理的默认处理器中被捕捉，并写入错误日志
 
-负责人沟通
-git 学习使用 开发工具 调试技巧
+关闭钩子
+```java
+Runtime.getRuntime().addShutdownHook(new Thread() {
+  public void run() {
 
-之前的后台权限管理：
-1. 只有固定的管理员与普通用户两种角色，每个用户只能配置一个角色
-2. 用户与可操作权限直接关联，每个角色能做的事情直接在代码中写死，无法动态配置
-
-后台权限管理改造：
-1. 基于 RBAC （Role-Bases Access Control）模型进行改造
-role(name, type, status)：商务，运维，产品
-user(username, dept_id, status)
-role_user(role_id, user_id)：关联用户与角色
-
-2. 为了对用户管理，在用户上层引入部门
-dept(name, parent_id, level, seq)
-
-3. 为了对权限管理，在权限上层映入权限模块
-acl(code, name, module_id, url, type, status, seq)
-acl_module(name, parent_id, level, status)
-role_acl(role_id, acl_id)：关联角色与权限
-
-4. 通过角色进行分配权限和用户
-5. 通过拦截器，对当前用户和访问的 url 进行判断。同时权限拦截器中增加对参数的检查
-先判断接口是否有权访问，再根据配置的条件判断是否有权使用指定的参数值
-
-6. 添加缓存
-7. 操作日志记录，并根据日志记录进行恢复
-log(type, target_id, old_value, new_value, status)
-
-user：登录登出
-支持用户名邮箱电话号码登录
-
-BeanValidator
-
-添加用户、编辑用户等操作、获取某部门下所有用户、获取用户所有角色、获取用户所有权限点（超级用户拥有所有权限，普通用户根据其拥有的所有角色获取所拥有的所有权限并在权限树中显示）
-
-添加部门（维护部门层级）、编辑部门等操作（由于维护了部门层级，编辑部门需要更新子部门的部门层级）、删除部门（空部门：没有子部门，没有用户）、部门树结构
-
-添加权限点、更新权限点、获取某权限模块下的所有权限、获取某权限点下授权角色与授权用户
-
-添加权限模块（维护权限模块层级）、编辑权限模块等操作（由于维护了权限模块层级，编辑权限模块需要更新子权限模块的层级）、删除权限模块（空模块：没有子模块，没有权限点）、权限模块树结构
-
-添加角色、编辑角色等操作、查看所有角色、获取某一角色的权限并形成权限树、更改角色权限、获取某一角色下的所有用户以及不属于此角色下的用户、更新角色下的用户
-
-根据日志恢复操作
-
-```
-request.getRequestDispatcher(path).forward(request, response);
-response.sendRedirect(ret);
+  }
+});
 ```
 
-tomcat配置access日志，记录每次http请求相关信息
-在系统里调用外部的地方，记录请求的接口、参数、返回结果、花费时间、遇到的异常等
+JVM 停止时将所有的守护线程抛弃，不执行 `finally` 代码块，直接退出，应尽可能少地使用守护进程，守护线程最好用于执行内部任务
 
 频繁GC问题或内存溢出问题
 一、使用jps查看线程ID
@@ -78,295 +36,29 @@ static final 变量就是编译期常量。这些变量在编译时会被替换�
 jmap -heap pid 查看堆使用情况
 jmap -histo pid：查看堆中对象数量和大小
 
-性能调优
-1. 内存占用
-2. 延时
-3. 吞吐量
+static
+类属性中被static所引用的变量，会被作为GC的root根节点。作为根节点就意味着，这一类变量是基本上不会被回收的。因此，static很容易引入内存泄漏的风险
 
-优雅关机
-JVM退出：JVM收到退出信号后，会调用注册的钩子，我们通过的注册的JVM退出钩子进行优雅关机
-阻止Daemon的线程在JVM退出被杀掉而导致消息丢失：如果Worker线程是Daemon线程，我们需要在JVM退出钩子中等待Worker线程完成当前手头处理的消息，再退出JVM。如果不是Daemon线程，即使JVM收到退出信号，也得等待Worker线程退出后再退出，不会丢掉正在处理的消息
-唤醒阻塞 Worker 线程并退出：中断线程以退出，在异常处理的默认处理器中被捕捉，并写入错误日志
+ThreadLocal 可以保存"key : value"键值对，一个ThreadLocal只能保存一个
+在ThreadLoalMap中，也是初始化一个大小16的Entry数组，Entry对象用来保存每一个key-value键值对，只不过这里的key永远都是ThreadLocal对象，是不是很神奇，通过ThreadLocal对象的set方法，结果把ThreadLocal对象自己当做key，放进了ThreadLoalMap中
 
-停止线程
-1. 取消任务标志位
-缺点：无法应用于拥塞方法，假设在循环中调用了拥塞方法，任务可能因拥塞而永远不会去检查取消标志位，甚至会造成永远不能停止
-2. 中断
-```
-public class Thread {
-    // 中断当前线程
-    public void interrupt();
-    // 判断当前线程是否被中断
-    public boolen isInterrupt();
-    // 清除当前线程的中断状态，并返回之前的值
-    public static boolen interrupt();   
-}
-```
-代码中有两次检查中断请求：
-第一次是在循环开始前，显示检查中断请求
-第二次是在put方法，该方法为拥塞的，会隐式坚持当前线程是否被中断
-```
-public void run() {
-    try {
-        BigInteger p = BigInteger.ONE;
-        //使用中断的方式来取消任务
-        while (!Thread.currentThread().isInterrupted())
-            //put方法会隐式检查并响应中断
-            queue.put(p = p.nextProbablePrime());
-    } catch (InterruptedException consumed) {
-        /* 允许任务退出 */
-    }
-}
-```
-3. 通过Future取消任务
-4. 不可中断的拥塞：让其抛出类似的异常，来停止任务
-```
-public class ReaderThread extends Thread {
-    private static final int BUFSZ = 512;
-    private final Socket socket;
-    private final InputStream in;
+ThreadLoalMap的Entry是继承WeakReference，和HashMap很大的区别是，Entry中没有next字段，所以就不存在链表的情况
 
-    public ReaderThread(Socket socket) throws IOException {
-        this.socket = socket;
-        this.in = socket.getInputStream();
-    }
+hash冲突
+每个ThreadLocal对象都有一个hash值 threadLocalHashCode，每初始化一个ThreadLocal对象，hash值就增加一个固定的大小 0x61c88647。
 
-    public void interrupt() {
-        try {
-            // 关闭套接字
-            // 此时in.read会抛出异常
-            socket.close();
-        } catch (IOException ignored) {
-        } finally {
-            // 正常的中断
-            super.interrupt();
-        }
-    }
+在插入过程中，根据ThreadLocal对象的hash值，定位到table中的位置i，过程如下： 1、如果当前位置是空的，那么正好，就初始化一个Entry对象放在位置i上； 2、不巧，位置i已经有Entry对象了，如果这个Entry对象的key正好是即将设置的key，那么重新设置Entry中的value； 3、很不巧，位置i的Entry对象，和即将设置的key没关系，那么只能找下一个空位置；
 
-    public void run() {
-        try {
-            byte[] buf = new byte[BUFSZ];
-            while (true) {
-                int count = in.read(buf);
-                if (count < 0)
-                    break;
-                else if (count > 0)
-                    processBuffer(buf, count);
-            }
-        } catch (IOException e) { 
-            // 如果socket关闭，in.read方法将会抛出异常
-            // 借此机会，响应中断，线程退出
-        }
-    }
+这样的话，在get的时候，也会根据ThreadLocal对象的hash值，定位到table中的位置，然后判断该位置Entry对象中的key是否和get的key一致，如果不一致，就判断下一个位置
 
-    public void processBuffer(byte[] buf, int count) {
-    }
-}
-```
+可以发现，set和get如果冲突严重的话，效率很低，因为ThreadLoalMap是Thread的一个属性，所以即使在自己的代码中控制了设置的元素个数，但还是不能控制其它代码的行为
 
-处理非正常线程终止：
-```
-public interface UncaughtExceptionHandler {
-    void uncaughtException(Thread t, Throwable e);
-}
-```
-如果JVM发现一个线程因未捕获异常而退出，就会把该异常交个Thread对象设置的UncaughtExceptionHandler来处理
+ThreadLocal可能导致内存泄漏
+创建ThreadLocal的线程一直持续运行，那么这个Entry对象中的value就有可能一直得不到回收，发生内存泄露
 
-可以为所有的Thread设置一个默认的UncaughtExceptionHandler，通过调用Thread.setDefaultUncaughtExceptionHandler(Thread.UncaughtExceptionHandler eh)方法，这是Thread的一个static方法
+在调用ThreadLocal的get()、set()可能会清除ThreadLocalMap中key为null的Entry对象，这样对应的value就没有GC Roots可达了，下次GC的时候就可以被回收，当然如果调用remove方法，肯定会删除对应的Entry对象
 
-关闭钩子
-```java
-Runtime.getRuntime().addShutdownHook(new Thread() {
-  public void run() {
-
-  }
-});
-```
-
-JVM 停止时将所有的守护线程抛弃，不执行 `finally` 代码块，直接退出，应尽可能少地使用守护进程，守护线程最好用于执行内部任务
-
-终结器访问的任何状态都可能被多个线程访问，这样就必须对其访问操作进行同步
-终结器通常在对象上产生巨大的性能开销
-大多数情况下，使用 `finally` 代码块和显示 `close` 方法能够比终结器更好地管理资源
-
-在线程池的线程中不应该使用 `ThreadLocal` 在任务之间传递值
-只有在任务都是同类型且相互独立时，线程池的性能才能达到最佳
-
-
-线程池的关闭
-调用线程的interrupt方法，它有两个作用：
-1、如果此线程处于阻塞状态(比如调wait方法，io等待)，则会立刻退出阻塞，并抛出InterruptedException异常，线程就可以通过捕获InterruptedException来做处理，然后让线程退出。
-2、如果此线程正处于运行之中，则线程不受任何影响，继续运行，仅仅是线程的中断标记被设置为true。所以线程要在适当的位置通过调用isInterrupted方法来查看自⼰是否被中断，并做退出操作
-
-如果线程的interrupt方法先被调用，然后线程调用阻塞方法进入阻塞状态，InterruptedException异常依旧会抛出。如果线程捕获InterruptedException异常后，继续调用阻塞方法， 将不再触发InterruptedException异常
-
-shutdownNow：线程池拒接收新提交的任务，同时立刻关闭线程池，线程池的任务不再执行
-shutdown：线程池拒接收新提交的任务，同时等待线程池的任务执行完毕后关闭线程池
-
-调用完shutdownNow和shuwdown方法后，并不代表线程池已经完成关闭操作，它只是异步的通知线程池进行关闭处理。如果要同步等待线程池彻底关闭后才继续往下执行，需要调用awaitTermination方法进行同步等待
-shutdownNow 源码分析
-1. 原子性的修改线程池的状态为STOP状态
-2. 遍历线程池的所有工作线程，然后调用线程的interrupt方法
-3. 将队列中还没有执行的任务放到列表里面，返回给调用方
-
-shutdown 源码分析
-1. 将线程池的状态修改为SHUTDOWN状态
-2. 调用 interruptIdleWorkers方法，来中断空闲的线程
-当我们调用线程池的shuwdown方法时，如果线程正在执行线程池的任务，即便任务处于阻塞状态，线程也不会被中断，而是继续执行。如果线程池阻塞等待从队列中读取任务，则会被唤醒，但是会继续判断队列是否为空，若不为空，则会继续从队列中读取任务，若为空则线程退出
-
-使用shutdownNow方法，可能会引起报错，使用shutdown方法可能会导致线程关闭不了
-所以当我们使用shutdownNow方法关闭线程池时，一定要对任务进行异常捕获
-当我们使用shuwdown方法关闭线程池时，一定要确保任务里不会有永久阻塞等待的逻辑，否则线程池就关闭不了
-最后，确定要记得shutdownNow和shuwdown调用完，线程池并非是立刻就关闭的，要想等待线程池关闭，还需调用awaitTermination方法来阻塞等待
-
-如果要实现 immutable 的类，我们需要做到：
-将 class 自身声明为 final，这样别人就不能扩展来绕过限制了
-将所有成员变量定义为 private 和 final，并且不要实现 setter 方法
-通常构造对象时，成员变量使用深度拷贝来初始化，而不是直接赋值，这是一种防御措施，因为你无法确定输入对象不被其他人修改
-如果确实需要实现 getter 方法，或者其他可能会返回内部状态的方法，使用 copy-on-write 原则，创建私有的 copy
-
-类型擦除就是说Java泛型只能用于在编译期间的静态类型检查，然后编译器生成的代码会擦除相应的类型信息，这样到了运行期间实际上JVM根本就不知道泛型所代表的具体类型
-
-避免死锁 
-1. 避免使用多个锁
-2. 设计好锁的获取顺序
-3. 使用带超时的方法
-
-死锁发生原因
-1. 互斥条件
-2. 互斥条件长期持有
-3. 循环依赖关系
-
-ThreadLocalMap 建议自己 remove, 且不要与线程池配合，因为 worker 线程往往不会退出
-
-使用双重锁检测机制，确保并发情况下instance对象不会被重复初始化
-使用volatile修饰符，防止指令重排引发的初始化问题
-```
-public class Singleton {
-    private Singleton() {}  //私有构造函数
-    private volatile static Singleton instance = null;  //单例对象
-    //静态工厂方法
-    public static Singleton getInstance() {
-          if (instance == null) {      //双重检测机制
-         synchronized (Singleton.class){  //同步锁
-           if (instance == null) {     //双重检测机制
-             instance = new Singleton();
-                }
-             }
-          }
-          return instance;
-      }
-}
-```
-用静态内部类实现单例模式：INSTANCE对象初始化的时机并不是在单例类Singleton被加载的时候，而是在调用getInstance方法，使得静态内部类LazyHolder被加载的时候。因此这种实现方式是利用classloader的加载机制来实现懒加载，并保证构建单例的线程安全
-```
-public class Singleton {
-    private static class LazyHolder {
-        private static final Singleton INSTANCE = new Singleton();
-    }
-    private Singleton (){}
-    public static Singleton getInstance() {
-        return LazyHolder.INSTANCE;
-    }
-}
-```
-
-用枚举实现单例模式：
-```
-public enum SingletonEnum {
-    INSTANCE;
-}
-```
-使用枚举实现的单例模式，不但可以防止利用反射强行构建单例对象，而且可以在枚举类对象被反序列化的时候，保证反序列的返回结果是同一对象。
-对于其他方式实现的单例模式，如果既想要做到可序列化，又想要反序列化为同一对象，则必须实现readResolve方法。
-
-而Callable+Future/FutureTask可以获取多线程运行的结果，可以在等待时间太长没获取到需要的数据的情况下取消该线程的任务，非常有用
-
-8、Java中如何获取到线程dump文件
-（1）获取到线程的pid，可以通过使用jps命令，在Linux环境下还可以使用ps -ef | grep java
-（2）打印线程堆栈，可以通过使用jstack pid命令，在Linux环境下还可以使用kill -3 pid
-
-12、生产者消费者模型的作用是什么
-（1）通过平衡生产者的生产能力和消费者的消费能力来提升整个系统的运行效率，这是生产者消费者模型最重要的作用
-（2）解耦，这是生产者消费者模型附带的作用，解耦意味着生产者和消费者之间的联系少，联系越少越可以独自发展而不需要收到相互的制约
-
-17、怎么检测一个线程是否持有对象监视器
-Thread类提供了一个holdsLock(Object obj)方法，当且仅当对象obj的监视器被某条线程持有的时候才会返回true，注意这是一个static方法，这意味着"某条线程"指的是当前线程
-
-22、Linux环境下如何查找哪个线程使用CPU最长
-（1）获取项目的pid，jps或者ps -ef | grep java
-（2）top -H -p pid，顺序不能改变
-
-24、怎么唤醒一个阻塞的线程
-如果线程是因为调用了wait()、sleep()或者join()方法而导致的阻塞，可以中断线程，并且通过抛出InterruptedException来唤醒它；如果线程遇到了IO阻塞，无能为力，因为IO是操作系统实现的，Java代码并没有办法直接接触到操作系统
-
-NIO 组成部分
-Buffer, Channel, Selector, Charset
-
-对于ThreadLocal使用前或者使用后一定要先remove
-
-发布对象：是一个对象能够被当前范围之外的代码所使用
-对象逸出：一种错误的发布，当一个对象还没有构造完成时，就被其他线程所见
-
-方法逃逸
-```java
-public static StringBuffer craeteStringBuffer(String s1, String s2) {
-    StringBuffer sb = new StringBuffer();
-    sb.append(s1);
-    sb.append(s2);
-    return sb;
-}
-```
-```java
-public static String createStringBuffer(String s1, String s2) {
-    StringBuffer sb = new StringBuffer();
-    sb.append(s1);
-    sb.append(s2);
-    return sb.toString();
-}
-```
-
-安全发布对象
-1. 静态初始化函数中初始化一个对象引用
-2. 将对象的引用保存到 volatile 类型域或者 AtomicReference 对象中
-3. 将对象的引用保存到某个正确构造对象的 final 类型域中
-4. 将对象的引用保存到一个由锁保护的域中
-
-double check 线程不安全，因为在生成实例的三个步骤可能会发生指令重排
-分配内存、初始化对象、将分配的内存地址保存到变量（可能会发生指令重排）
-
-不可变对象
-1. 对象创建之后其状态不能修改
-2. 对象所有域都为 `final` 类型
-3. 对象时正确创建的（在创建期间，`this` 引用没有逸出）
-
-`final` 类：不能被继承
-`final` 方法：锁定方法
-`final` 变量：基本类型与引用对象 ?
-
-jdk
-```java
-private Map<Integer, Integer> map = Maps.newHashMap();
-map = Collections.unmodifiableMap(map);
-map.put(1, 2);
-```
-guava
-```java
-private final ImmutableList list = ImmutableList.of(1, 2, 3);
-private final ImmutableSet set = ImmutableSet.copyOf(list);
-private final ImmutableMap<Integer, Integer> map = ImmutableMap.of(1, 2, 3, 4);
-list.add(4);
-```
-
-线程封闭
-1. 堆栈封闭：局部变量，无并发问题
-2. ThreadLocal 线程封闭
-```java
-private static final ThreadLocal<Long> holder = new ThreadLocal<>();
-holder.add(1);
-holder.get();
-holder.remove();
-```
+如果使用ThreadLocal的set方法之后，没有显示的调用remove方法，就有可能发生内存泄露，所以养成良好的编程习惯十分重要，使用完ThreadLocal之后，记得调用remove方法
 
 Fork/Join
 ```java
@@ -429,288 +121,57 @@ public class ForkJoinTask extends RecursiveTask<Integer> {
 }
 ```
 
-CPU 密集型：压榨 CPU，NCPU + 1
-IO 密集型：2 * NCPU
 
-死锁
-1. 互斥条件
-2. 请求和保持条件
-3. 不剥夺条件
-4. 环路等待条件
+内存屏障共分为四种类型：
+LoadLoad屏障：
+抽象场景：Load1; LoadLoad; Load2
+Load1 和 Load2 代表两条读取指令。在Load2要读取的数据被访问前，保证Load1要读取的数据被读取完毕。
 
-避免死锁
-1. 加锁顺序
-2. 加锁时限
-3. 死锁检测
+StoreStore屏障：
+抽象场景：Store1; StoreStore; Store2
+Store1 和 Store2代表两条写入指令。在Store2写入执行前，保证Store1的写入操作对其它处理器可见
 
+LoadStore屏障：
+抽象场景：Load1; LoadStore; Store2
+在Store2被写入前，保证Load1要读取的数据被读取完毕。
 
-不可变对象可以自由共享与发布
+StoreLoad屏障：
+抽象场景：Store1; StoreLoad; Load2
+在Load2读取操作执行前，保证Store1的写入对所有处理器可见。StoreLoad屏障的开销是四种屏障中最大的
 
-NumberRange 类不足以保护它的不变性条件
-```java
-public class NumberRange {
-  private final AtomicInteger lower = new AtomicInteger(0);
-  private final AtomicInteger upper = new AtomicInteger(0);
-
-  public void setLower(int i) {
-    if (i > upper.get()) {
-      throw new IllegalArgumentException("lower > upper");
-    }
-    lower.set(i);
-  }
-
-  public void setUpper(int i) {
-    if (i < lower.get()) {
-      throw new IllegalArgumentException("lower > upper");
-    }
-    upper.set(i);
-  }
-
-  public boolean isInRange(int i) {
-    return (i >= lower.get() && i <= upper.get());
-  }
-}
-```
-使用不同锁导致线程不安全
-```java
-public class ListHelper<E> {
-  public List<E> list = Collections.synchronizedList(new ArrayList<E>());
-
-  public synchronized boolean putIfAbsent(E x) {
-    boolean absent = !list.contains(x);
-    if (absent) {
-      list.add(x);
-    }
-    return absent;
-  }
-}
-```
-使用相同锁保证线程安全
-```java
-public class ListHelper<E> {
-  public List<E> list = Collections.synchronizedList(new ArrayList<E>());
-
-  public boolean putIfAbsent(E x) {
-    synchronized (list) {
-      boolean absent = !list.contains(x);
-      if (absent) {
-        list.add(x);
-      }
-      return absent;
-    }
-  }
-}
-```
-组合方式，即使底层的 `List` 不是线程安全的或者加锁实现修改，`ImprovedList` 也提供了一致的加锁机制实现线程安全性
-```java
-public class ImprovedList<T> implements List<T> {
-  private final List<T> list;
-
-  public ImprovedList(List<T> list) {
-    this.list = list;
-  }
-
-  public synchronized boolean putIfAbsent(T x) {
-    boolean contains = list.contains(x);
-    if (contains) {
-      list.add(x);
-    }
-    return !contains;
-  }
-}
-```
-通过调用者加锁保证 Vector 复合操作线程安全
-```java
-public static Object getLast(Vector list) {
-  synchronized (list) {
-    int lastIndex = list.size() - 1;
-    return list.get(lastIndex);
-  }
-}
-
-public static void deleteLast(Vector list) {
-  synchronized (list) {
-    int lastIndex = list.size() - 1;
-    list.remove(lastIndex);
-  }
-}
-```
-可能会抛出异常，当 Vector 仍然是线程安全的，因为 Vector 状态有效
-```java
-for (int i = 0; i < vector.size(); ++i) {
-  Object obj = vector.get(i);
-}
-```
-加锁解决不可靠迭代问题，降低了并发性
-```java
-synchronized(vector) {
-  for (int i = 0; i < vector.size(); ++i) {
-    Object obj = vector.get(i);
-  }
-}
-```
-隐藏迭代器：调用容器的 `toString` 方法对容器进行遍历
-```java
-System.out.println("list: " + list)
-```
-`ConcurrentHashMap` 不能被加锁来执行独占访问，因此不能通过加锁创建新的原子操作
+在一个变量被volatile修饰后，JVM会为我们做两件事：
+1.在每个volatile写操作前插入StoreStore屏障，在写操作后插入StoreLoad屏障。
+2.在每个volatile读操作前插入LoadLoad屏障，在读操作后插入LoadStore屏障。
 
 
+gc日志：-XX:PrintHeapAtGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCTimeStamp -Xloggc:$CATALINA_BASE/logs/gc.log
 
-死锁
-1. 锁顺序死锁
-2. 动态锁顺序死锁
-3. 协作对象之间发生死锁：在持有锁的情况下调用某个外部方法，需要警惕死锁
-4. 资源死锁
+观察内核状态的上下文切换(cs)次数
+bi和bo这两个值，分别表示块设备每秒接收的块数量和块设备每秒发送的块数量，可以判定io繁忙状况
+vmstat 1 5
 
-死锁避免
-1. 定时锁
-2. kill -3 获取线程转储信息
+String类型的常量池主要使用方法有两种：
+直接使用双引号声明出来的String对象会直接存储在常量池中。
+如果不是用双引号声明的String对象，可以使用String提供的intern方法。intern 方法会从字符串常量池中查询当前字符串是否存在，若不存在就会将当前字符串放入常量池中
 
-性能
-服务时间
-延迟时间
-吞吐率
-效率
-可伸缩性
-容量
+异常
+在Finally块中清理资源或者使用try-with-resource语句
+不要捕获Throwable
+不要忽略异常
+不要记录并抛出异常，经常会给同一个异常输出多条日志
+包装异常时不要抛弃原始的异常
 
-线程引入开销
-上下文切换
-内存同步
-阻塞
+vmstat 测试
+us过高：
+a. 代码问题。比如一个耗时的循环不加sleep，或者在一些cpu密集计算（如xml解析，加解密，加解压，数据计算）时没处理好
+b. gc频繁。一个比较容易遗漏的问题就是gc频繁时us容易过高，因为垃圾回收属于大量计算的过程。gc频繁带来的cpu过高常伴有内存的大量波动，通过内存来判断并解决该问题更好
+sy过高：
+a. 上下文切换次数过多。通常是系统内线程数量较多，并且线程经常在切换，由于系统抢占相对切换时间和次数比较合理，所以sy过高通常都是主动让出cpu的情况，比如sleep或者lock wait, io wait。
+wa过高：
+a. 等待io的cpu占比较多。注意与上面情况的区别，io wait引起的sy过高指的是io不停的wait然后唤醒，因为数量较大，导致上下文切换较多，强调的是动态的过程；而io wait引起的wa过高指的是io wait的线程占比较多，cpu切换到这个线程是io wait，到那个线程也是io wait，于是总cpu就是wait占比较高。
+id过高：
+a. 很多人认为id高是好的，其实在性能测试中id高说明资源未完全利用，或者压测不到位，并不是好事
 
-减少锁竞争
-1. 缩小锁范围
-2. 减小锁粒度
-3. 锁分段
-4. 缓存热点数据
-5. 读写锁、原子变量代替独占锁
-
-性能测试
-1. 吞吐量
-2. 响应性
-3. 可伸缩性
-
-
-
-ReentranLock, Semaphore, ReentrantReadWriteLock, CountDownLatch, SynchronousQueue 和 FutureTask 都是基于 AQS 构建
-
-```java
-public class NumberRange {
-  private static class IntPair {
-    final int lower;
-    final int upper;
-  }
-
-  private final AtomicReference<IntPair> values = new AtomicReference<IntPair>(new IntPair(0, 0));
-
-  public int getLower() {
-    return values.get().lower;
-  }
-
-  public int getUpper() {
-    return values.get().upper;
-  }
-
-  public void setLower() {
-    while (true) {
-      IntPair oldv = values.get();
-      if (i > oldv.upper) {
-        throw new IllegalArgumentException("...");
-      }
-      IntPair newv = new IntPair(i, oldv.upper);
-      if (values.compareAndSet(oldv, newv))
-        return ;
-    }
-  }
-}
-```
-
-线程不安全类
-StringBuilder：不安全
-StringBuffer：安全
-SimpleDateFormat：不安全
-JodaTime：安全
-ArrayList、HashSet、HashMap：不安全
-Vector、HashTable（key、value 不能为 null）、Collections.synchronizedXXX（List、Set、Map）：同步容器
-
-ALT + F7 查找调用
-F3 下一个
-
-线程优势
-1. 发挥多处理器强大能力
-2. 建模简单
-3. 异步时间简单处理
-4. 响应更灵敏的用户界面
-
-线程风险
-1. 安全性
-2. 活跃性
-3. 性能问题
-
-可变状态逸出
-```java
-class UnsafeStates {
-  private String[] states = new String[]{ "AK", "AL" };
-
-  public String[] getStates() { return states; }
-}
-```
-this 引用逸出
-```java
-class ThisEscape {
-  public ThisEscape(EventSource source) {
-    source.reigsterListener(
-      new EventListener() {
-        public void onEvent(Event e) {
-          doSomethine(e);
-        }
-      });
-  }
-}
-```
-```java
-class SafeListener {
-  private final EventListener listener;
-
-  private SafeListener() {
-    listener = new EventListener() {
-      public void onEvent(Event e) {
-        doSomething(e);
-      }
-    };
-  }
-
-  public static SafeListener newInstance(EventSource source) {
-    SafeListener safe = new SafeListener();
-    source.registerListener(safe.listener);
-    return safe;
-  }
-}
-```
-
-构造函数中启动线程造成 this 引用逸出
-
-线程封闭
-1. 栈封闭
-2. ThreadLocal
-
-不可变对象条件
-1. 对象创建后状态不能修改
-2. 对象所有域为 `final` 类型
-3. 对象是正确创建的
-
-安全发布一个对象，对象的引用以及对象的状态必须同时对其他线程可见。可以通过以下方式安全发布对象：
-1. 静态初始化函数中初始化一个对象引用
-2. 将对象引用保存到 volatile 类型的域或者 AtomicReference 对象中
-3. 将对象引用保存到某个正确构造对象的 final 类型域中
-4. 将对象引用保存到一个由锁保护的域中
-
-发布一个静态构造对象，最简单和最安全的方式是使用静态初始化器。静态初始化器由 JVM 在类的初始化阶段执行，由 JVM 保证同步
-```java
-public static Holder holder = new Holder(100);
-```
 
 HTTP连接池有以下优势：
 降低了频繁建立HTTP连接的时间开销，减少了TCP连接建立和释放时socket通信服务器端资源的浪费；
@@ -1174,48 +635,6 @@ TCP三次握手和四次挥手？
 JWT 与 Session 方式存储 id 的差异
 Session方式存储用户id的最大弊病在于要占用大量服务器内存
 
-AtomicStampedReference来解决ABA问题
-
-HashMap
-https://mp.weixin.qq.com/s/HzRH9ZJYmidzW5jrMvEi4w
-
-invokeAll()/invokeAny()
-https://mp.weixin.qq.com/s/XTa3pONjjtu8FSr9Y3rgzQ
-
-ThreadLocal
-
-
-NIO
-https://juejin.im/post/5afad7b1f265da0b7f44b60b?utm_medium=be&utm_source=weixinqun
-https://juejin.im/post/5af7f01b6fb9a07a9f01a339?utm_medium=be&utm_source=weixinqun
-https://juejin.im/post/5af80322f265da0b981b8b9e?utm_medium=be&utm_source=weixinqun
-
-https://mp.weixin.qq.com/s/nwniFqdm2h5zEn9eGPYlig
-https://mp.weixin.qq.com/s/6lcCFTr74Tl_rIPpsYdkaw
-
-static
-类属性中被static所引用的变量，会被作为GC的root根节点。作为根节点就意味着，这一类变量是基本上不会被回收的。因此，static很容易引入内存泄漏的风险
-
-ThreadLocal 可以保存"key : value"键值对，一个ThreadLocal只能保存一个
-在ThreadLoalMap中，也是初始化一个大小16的Entry数组，Entry对象用来保存每一个key-value键值对，只不过这里的key永远都是ThreadLocal对象，是不是很神奇，通过ThreadLocal对象的set方法，结果把ThreadLocal对象自己当做key，放进了ThreadLoalMap中
-
-ThreadLoalMap的Entry是继承WeakReference，和HashMap很大的区别是，Entry中没有next字段，所以就不存在链表的情况
-
-hash冲突
-每个ThreadLocal对象都有一个hash值 threadLocalHashCode，每初始化一个ThreadLocal对象，hash值就增加一个固定的大小 0x61c88647。
-
-在插入过程中，根据ThreadLocal对象的hash值，定位到table中的位置i，过程如下： 1、如果当前位置是空的，那么正好，就初始化一个Entry对象放在位置i上； 2、不巧，位置i已经有Entry对象了，如果这个Entry对象的key正好是即将设置的key，那么重新设置Entry中的value； 3、很不巧，位置i的Entry对象，和即将设置的key没关系，那么只能找下一个空位置；
-
-这样的话，在get的时候，也会根据ThreadLocal对象的hash值，定位到table中的位置，然后判断该位置Entry对象中的key是否和get的key一致，如果不一致，就判断下一个位置
-
-可以发现，set和get如果冲突严重的话，效率很低，因为ThreadLoalMap是Thread的一个属性，所以即使在自己的代码中控制了设置的元素个数，但还是不能控制其它代码的行为
-
-ThreadLocal可能导致内存泄漏
-创建ThreadLocal的线程一直持续运行，那么这个Entry对象中的value就有可能一直得不到回收，发生内存泄露
-
-在调用ThreadLocal的get()、set()可能会清除ThreadLocalMap中key为null的Entry对象，这样对应的value就没有GC Roots可达了，下次GC的时候就可以被回收，当然如果调用remove方法，肯定会删除对应的Entry对象
-
-如果使用ThreadLocal的set方法之后，没有显示的调用remove方法，就有可能发生内存泄露，所以养成良好的编程习惯十分重要，使用完ThreadLocal之后，记得调用remove方法
 
 spring 事务
 TransactionDefinition 用于描述事务的隔离级别、超时时间、是否为只读事务和事务传播规则等控制事务具体行为的事务属性
@@ -1312,8 +731,6 @@ PROPAGATION_NESTED：若当前存在事务，则在嵌套事务内执行；若�
 事务增强
 基于接口的动态代理：除 public 外的其他所有方法。此外，public static 也不能被增强
 基于 CGLib 的动态代理：private, static, final 方法
-
-
 
 
 

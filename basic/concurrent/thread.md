@@ -32,11 +32,13 @@ yield 方法的作用是放弃当前的 CPU 资源，将它让给其他的任务
 中断并不强迫终止一个线程，而是作为一种协作机制给线程传递一个取消信号，由线程处理
 
 1. 若线程在运行中，且没有执行 IO 操作，interrupt 只会设置线程的中断标志位，线程在运行过程中选择合适的位置检查中断标志位
-2. 在这些 waiting/timed_waiting 状态时，对线程对象调用 interrupt 会使得该线程抛出 `InterruptedException` 异常，异常抛出后，中断标志位会被清空
+2. 在这些 waiting/timed_waiting 状态时，对线程对象调用 interrupt 会使得该线程抛出 InterruptedException 异常，异常抛出后，中断标志位会被清空
 3. 若线程在等待锁，对线程对象调用 interrupt 只会设置线程的中断标志位，线程依然处于 BLOCKED 状态
 4. 若线程尚未启动或者已经结束，则调用 interrupt 没有任何效果，中断标志位也不会被设置
 
 InputStream 的 read 调用是不可中断的，若流中没有数据，read 会阻塞，此时线程状态依然是 RUNNABLE，interrupt 调用只会设置线程中断标志而不响应
+
+如果 jvm 发现一个线程因未捕获异常而退出，就会把该异常交个线程对象设置的 UncaughtExceptionHandler 来处理
 
 
 ## 生命周期
@@ -151,4 +153,81 @@ while (!terminated) {
 ### 线程封闭
 仅在单线程内访问数据，不存在共享，即便不同步也不会有并发问题
 
+### 安全发布
+不可变对象可以自由共享与发布
+1. 对象创建之后其状态不能修改
+2. 对象所有域都为 final 类型
+3. 对象时正确创建的（在创建期间，this 引用没有逸出）
 
+安全发布对象，对象的引用以及对象的状态必须同时对其他线程可见
+1. 静态初始化函数中初始化一个对象引用
+2. 将对象的引用保存到 volatile 类型域或者 AtomicReference 对象中
+3. 将对象的引用保存到某个正确构造对象的 final 类型域中
+4. 将对象的引用保存到一个由锁保护的域中
+
+发布一个静态构造对象，最简单和最安全的方式是使用静态初始化器。静态初始化器由 JVM 在类的初始化阶段执行，由 JVM 保证同步
+```java
+public static Holder holder = new Holder();
+```
+
+
+## 逃逸
+方法逃逸
+```java
+public static StringBuffer craeteStringBuffer(String s1, String s2) {
+    StringBuffer sb = new StringBuffer();
+    sb.append(s1);
+    sb.append(s2);
+    return sb;
+}
+```
+```java
+public static String createStringBuffer(String s1, String s2) {
+    StringBuffer sb = new StringBuffer();
+    sb.append(s1);
+    sb.append(s2);
+    return sb.toString();
+}
+```
+
+可变状态逸出
+```java
+class UnsafeStates {
+    private String[] states = new String[]{ "AK", "AL" };
+
+    public String[] getStates() { return states; }
+}
+```
+
+this 引用逸出
+```java
+class ThisEscape {
+    public ThisEscape(EventSource source) {
+        source.reigsterListener(
+            new EventListener() {
+                public void onEvent(Event e) {
+                    doSomethine(e);
+                }
+        });
+    }
+}
+```
+```java
+class SafeListener {
+    private final EventListener listener;
+
+    private SafeListener() {
+        listener = new EventListener() {
+            public void onEvent(Event e) {
+                doSomething(e);
+            }
+        };
+    }
+
+    public static SafeListener newInstance(EventSource source) {
+        SafeListener safe = new SafeListener();
+        source.registerListener(safe.listener);
+        return safe;
+    }
+}
+```

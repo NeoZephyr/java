@@ -1,4 +1,17 @@
 ## 不可变性的类
+jdk
+```java
+private Map<Integer, Integer> map = Maps.newHashMap();
+map = Collections.unmodifiableMap(map);
+map.put(1, 2);
+```
+guava
+```java
+private final ImmutableList list = ImmutableList.of(1, 2, 3);
+private final ImmutableSet set = ImmutableSet.copyOf(list);
+private final ImmutableMap<Integer, Integer> map = ImmutableMap.of(1, 2, 3, 4);
+list.add(4);
+```
 
 ### 不可变性
 对象的所有属性都是 final 的，并不能保证不可变性。需要清楚是否要求属性对象也具备不可变性

@@ -8,8 +8,12 @@
 ### shutdown 方法
 不接受新任务，但已提交的任务会继续执行，即使任务还未开始执行
 
+使用 shuwdown 方法要确保任务里不会有永久阻塞等待的逻辑，否则线程池就关闭不了
+
 ### shutdownNow 方法
 不接受新任务，终止已提交但尚未执行的任务，对于正在执行的任务，一般会调用线程的 interrupt 方法尝试中断，不过线程可能不响应中断。shutdownNow 会返回已提交但尚未执行的任务列表
+
+使用 shutdownNow 方法可能会引发异常，所以要对任务进行异常捕获
 
 ### isShutdown 方法
 shutdown 和 shutdownNow 不会阻塞等待，它们返回后不代表所有任务都已结束，不过 isShutdown 方法会返回 true。可以通过 awaitTermination 等待所有任务结束，并限定等待的时间。若超时前所有任务都结束了，即 isTerminated 返回 true，则返回 true，否则返回 false
@@ -23,10 +27,10 @@ invokeAny 只需要有一个任务在限时内完成就会返回该任务的结�
 
 ## Executors
 ### newCachedThreadPool
-快速创建一个拥有自动回收线程功能且没有限制的线程池
+快速创建线程数无界、工作队列没有存储空间的线程池
 
 ### newFixedThreadPool
-创建一个固定线程大小的线程池
+创建一个线程数固定、工作队列无界的线程池
 
 ### newScheduledThreadPool
 定时线程池，支持定时及周期性任务执行
@@ -55,6 +59,8 @@ ThreadPoolExecutor(
 如果是 CPU 密集型任务，主要是消耗 CPU 资源，可以将线程数设置为 N（CPU 核心数）+ 1
 如果是 I/O 密集型任务：系统会用大部分的时间来处理 I/O 交互，而不会占用 CPU 来处理，这时就可以将 CPU 交出给其它线程使用。因此在 I/O 密集型任务的应用中，可以将线程数设置为 2N
 
+总体来说，对于执行比较慢、数量不大的 IO 任务，考虑更多的线程数，而不需要太大的队列；对于吞吐量较大的计算型任务，线程数量不宜过多，可以是 CPU 核数或核数的 2 倍，但可能需要较长的队列来做缓冲
+
 通用计算：
 线程数 = N（CPU 核数）*（1 + WT（线程等待时间）/ ST（线程时间运行时间））
 可以通过 JDK 自带的工具 VisualVM 来查看 WT/ST 比例
@@ -63,7 +69,7 @@ ThreadPoolExecutor(
 表示线程池创建的最大线程数
 
 ### keepAliveTime
-如果一个线程空闲了 keepAliveTime 这么久，而且线程池的线程数大于 corePoolSize，那么这个空闲的线程就要被回收了。当该值为 0 时表示所有线程都不会超时终止
+如果一个线程空闲了 keepAliveTime 这么久，而且线程池的线程数大于 corePoolSize，那么这个空闲的线程就要被回收了。当该值为 0 时表示所有线程都不会超时终止。若设置 allowCoreThreadTimeOut 为 true，核心线程空闲时同样会被回收
 
 ### workQueue
 若使用无界队列，线程个数最多只能达到 corePoolSize，到达 corePoolSize 后，新的任务总会排队，参数 maximumPoolSize 失去意义。若使用 SynchronousQueue，由于没有实际存储元素的空间，当尝试排队时，只在正好有空闲线程在等待接受任务的情况下才会入队成功，否则会创建新线程，最终达到 maximumPoolSize
@@ -79,6 +85,11 @@ CallerRunsPolicy：提交任务的线程自己去执行该任务
 AbortPolicy：默认的拒绝策略，会抛出 RejectedExecutionException 异常
 DiscardPolicy：直接丢弃任务，没有任何异常抛出
 DiscardOldestPolicy：丢弃最老的任务，其实就是把最早进入工作队列的任务丢弃，然后把新任务加入到工作队列
+
+线程池改造：优先开启更多线程，然后再使用队列
+1. 由于线程池在工作队列满了无法入队的情况下会扩容线程池，可以重写队列的 offer 方法，造成这个队列已满的假象
+2. 由于 Hack 了队列，在达到了最大线程后势必会触发拒绝策略，可以实现一个自定义的拒绝策略处理程序，这个时候再把任务真正插入队列
+
 
 注意事项：
 1. 强烈建议使用有界队列
