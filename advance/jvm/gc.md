@@ -1,3 +1,66 @@
+### 控制参数
+1. -Xms 设置堆的最小空间，-Xmx 设置堆的最大空间
+2. -XX:NewSize 设置新生代最小空间，-XX:MaxNewSize 设置新生代最大空间
+3. -XX:PermSize 设置永久代最小空间，-XX:MaxPermSize 设置永久代最大空间
+4. -Xss 设置每个线程的堆栈
+5. 通过设置堆空间大小和新生代空间大小两个参数来间接控制老年代的参数
+
+
+## 堆对象的生存周期
+新建一个对象时，对象会被优先分配到新生代的 Eden 区中，这时虚拟机会给对象定义一个对象年龄计数器（通过参数 -XX:MaxTenuringThreshold 设置）
+
+当 Eden 空间不足时，虚拟机将会执行 Minor GC。这时 JVM 会把存活的对象转移到 Survivor 中，并给对象的年龄 +1。对象在 Survivor 中同样也会经历 MinorGC，每经过一次 MinorGC，对象的年龄将会 +1
+
+可以通过参数 -XX:PetenureSizeThreshold 设置直接被分配到老年代的最大对象，这时如果分配的对象超过了设置的阀值，对象就会直接被分配到老年代，这样可以减少新生代的垃圾回收
+
+
+## 堆内存分配
+查看堆内存配置的默认值
+```sh
+java -XX:+PrintFlagsFinal -version | grep HeapSize 
+jmap -heap 17284
+```
+
+JDK1.7
+年轻代和老年代的比例是 1:2，可以通过 –XX:NewRatio 重置该配置项
+年轻代中的 Eden 和 To Survivor、From Survivor 的比例是 8:1:1，可以通过 -XX:SurvivorRatio 重置该配置项
+
+如果开启了 -XX:+UseAdaptiveSizePolicy 配置项，JVM 将会动态调整 Java 堆中各个区域的大小以及进入老年代的年龄，–XX:NewRatio 和 -XX:SurvivorRatio 将会失效
+
+JDK1.8
+默认开启 -XX:+UseAdaptiveSizePolicy 配置项，不要随便关闭 UseAdaptiveSizePolicy 配置项，除非你已经对初始化堆内存 / 最大堆内存、年轻代 / 老年代以及 Eden 区 / Survivor 区有非常明确的规划了。否则 JVM 将会分配最小堆内存，年轻代和老年代按照默认比例 1:2 进行分配，年轻代中的 Eden 和 Survivor 则按照默认比例 8:2 进行分配。这个内存分配未必是应用服务的最佳配置，因此可能会给应用服务带来严重的性能问题
+
+
+## 内存调优
+### 调优参考指标
+GC 频率：高频的 FullGC 会给系统带来非常大的性能消耗，虽然 MinorGC 相对 FullGC 来说好了许多，但过多的 MinorGC 仍会给系统带来压力
+
+堆内存：分析堆内存大小是否合适，年轻代和老年代的比例是否合适。如果内存不足或分配不均匀，会增加 FullGC，严重的将导致 CPU 持续爆满，影响系统性能
+
+吞吐量：频繁的 FullGC 将会引起线程的上下文切换，增加系统的性能开销，从而影响每次处理的线程请求，最终导致系统的吞吐量下降
+
+延时：JVM 的 GC 持续时间也会影响到每次请求的响应时间
+
+### 调优方法
+调整堆内存空间减少 FullGC：堆内存基本被用完，而且存在大量 FullGC，这意味着堆内存严重不足，需要调大堆内存空间
+
+```
+java -jar -Xms4g -Xmx4g heapTest.jar
+```
+
+-Xms：堆初始大小
+-Xmx：堆最大值
+
+调整年轻代减少 MinorGC：可以将年轻代设置得大一些，从而减少一些 MinorGC
+
+```
+java -jar -Xms4g -Xmx4g -Xmn3g heapTest.jar
+```
+
+设置 Eden、Survivor 区比例：如果开启 AdaptiveSizePolicy，则每次 GC 后都会重新计算 Eden、From Survivor 和 To Survivor 区的大小，计算依据是 GC 过程中统计的 GC 时间、吞吐量、内存占用量。这个时候 SurvivorRatio 默认设置的比例会失效
+
+在 JDK1.8 中，默认是开启 AdaptiveSizePolicy 的，可以通过 -XX:-UseAdaptiveSizePolicy 关闭该项配置，或显示运行 -XX:SurvivorRatio=8 将 Eden、Survivor 的比例设置为 8:2。如果大部分新对象都是在 Eden 区创建的，可以固定 Eden 区的占用比例，来调优 JVM 的内存分配性能
+
 ## 垃圾回收机制
 ### 回收对象
 JVM 的内存区域中，程序计数器、虚拟机栈和本地方法栈这 3 个区域是线程私有的，随着线程的创建而创建，销毁而销毁；栈中的栈帧随着方法的进入和退出进行入栈和出栈操作，每个栈帧中分配多少内存基本是在类结构确定下来的时候就已知的，因此这三个区域的内存分配和回收都具有确定性
