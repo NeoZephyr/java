@@ -60,6 +60,30 @@ Java 虚拟机规范并没有要求在链接过程中完成解析。它仅规定
 
 在 Java 代码中，如果要初始化一个静态字段，可以在声明时直接赋值，也可以在静态代码块中对其赋值。如果直接赋值的静态字段被 final 所修饰，并且它的类型是基本类型或字符串时，那么该字段便会被编译器标记成常量值（ConstantValue），其初始化直接由 Java 虚拟机完成。除此之外的直接赋值操作，以及所有静态代码块中的代码，则会被 Java 编译器置于同一方法中，并把它命名为 <clinit>。JVM 通过加锁来确保类的 <clinit> 方法仅被执行一次
 
+```java
+public class StaticVarTest {
+
+    private static int var1 = 100;
+
+    static {
+        var1 = 200;
+        var2 = 2000;
+    }
+
+    private static int var2 = 1000;
+
+    public static void main(String[] args) {
+        // 200
+        System.out.println(StaticVarTest.var1);
+        
+        // 0 -> 2000 -> 1000
+        // 1000
+        System.out.println(StaticVarTest.var2);
+    }
+}
+```
+
+
 只有当初始化完成之后，类才正式成为可执行的状态
 
 类的初始化触发情况：
@@ -166,7 +190,7 @@ public class HelloClassLoader extends ClassLoader {
     protected Class<?> findClass(String name) throws ClassNotFoundException {
         String helloBase64 = "";
         byte[] bytes = decode(helloBase64);
-        return defineClass(name,bytes,0,bytes.length);
+        return defineClass(name, bytes, 0, bytes.length);
     }
 
     public byte[] decode(String base64) {
