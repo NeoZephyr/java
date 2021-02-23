@@ -56,6 +56,7 @@ public class StreamTest {
         System.out.println(optMax.getAsDouble());
 
         buildStream();
+        collect();
     }
 
     private static void buildStream() throws IOException {
@@ -74,6 +75,18 @@ public class StreamTest {
 
         Stream<Double> randomStream = Stream.generate(Math::random);
         randomStream.limit(5).forEach(System.out::println);
+    }
+
+    private static void collect() {
+        Map<Gender, List<Student>> genderToStudents = students.stream()
+                .collect(Collectors.groupingBy(Student::getGender));
+
+        System.out.println(genderToStudents);
+
+        Map<Boolean, List<Student>> gradeToStudents = students.stream()
+                .collect(Collectors.partitioningBy(stu -> stu.getScore() > 90));
+
+        System.out.println(gradeToStudents);
     }
 }
 
@@ -99,6 +112,10 @@ class Student {
 
     public String getName() {
         return name;
+    }
+
+    public Gender getGender() {
+        return gender;
     }
 
     @Override
