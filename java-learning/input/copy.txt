@@ -1,0 +1,5 @@
+spark sql
+hive
+kafka
+flume
+spark streaming
