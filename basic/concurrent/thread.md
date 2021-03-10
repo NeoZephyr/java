@@ -19,6 +19,7 @@ thread.setDaemon(true) 必须在 thread.start() 之前设置，否则会报 `Ill
 
 在 Daemon 线程中产生的新线程也是 Daemon 的
 
+守护、优先级可继承
 
 ## join
 调用 join 的线程等待该线程结束，在等待线程结束的过程中，这个等待可能被中断，若被中断会抛出 `InterruptedException` 异常
